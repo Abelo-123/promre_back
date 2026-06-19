@@ -47,7 +47,7 @@ function processTransaction($tgId, $type, $amount, $description, $pdo, $refType 
         'description'    => $description
     ]);
 
-    // 4. Handle Referral Commissions (7% of deposits)
+    // 4. Handle Referral Commissions (25% on first deposit, 7% on subsequent deposits)
     if ($type === 'deposit' && $amount > 0) {
         try {
             $stmt = $pdo->prepare('SELECT referred_by FROM auth WHERE tg_id = :tg_id');
@@ -56,7 +56,27 @@ function processTransaction($tgId, $type, $amount, $description, $pdo, $refType 
             
             if ($uRow && !empty($uRow['referred_by'])) {
                 $referrerId = (string)$uRow['referred_by'];
-                $commission = $amount * 0.07;
+                
+                // Determine if this is the first successful deposit
+                $isFirstDeposit = true;
+                if ($refType === 'deposit' && !empty($refId)) {
+                    $stmt = $pdo->prepare("SELECT COUNT(*) as cnt FROM deposits WHERE user_id = :user_id AND status = 'success' AND id != :current_deposit_id");
+                    $stmt->execute(['user_id' => $tgId, 'current_deposit_id' => $refId]);
+                    $depRow = $stmt->fetch();
+                    $otherSuccessfulCount = $depRow ? (int)$depRow['cnt'] : 0;
+                    $isFirstDeposit = ($otherSuccessfulCount === 0);
+                } else {
+                    // Fallback using transactions count
+                    $stmt = $pdo->prepare("SELECT COUNT(*) as cnt FROM transactions WHERE user_id = :user_id AND type = 'deposit'");
+                    $stmt->execute(['user_id' => $tgId]);
+                    $txRow = $stmt->fetch();
+                    $txCount = $txRow ? (int)$txRow['cnt'] : 0;
+                    $isFirstDeposit = ($txCount <= 1);
+                }
+
+                $commissionRate = $isFirstDeposit ? 0.25 : 0.07;
+                $commission = $amount * $commissionRate;
+                $percentageText = $isFirstDeposit ? '25%' : '7%';
 
                 // Update referrer balance
                 $stmt = $pdo->prepare('UPDATE auth SET balance = balance + :commission WHERE tg_id = :tg_id');
@@ -80,7 +100,7 @@ function processTransaction($tgId, $type, $amount, $description, $pdo, $refType 
                     'balance_after'  => $refNewBal,
                     'reference_type' => 'referral_user',
                     'reference_id'   => $tgId,
-                    'description'    => "7% referral commission from user #{$tgId} deposit"
+                    'description'    => "{$percentageText} referral commission from user #{$tgId} deposit"
                 ]);
 
                 // Add in-app notification alert for referrer
@@ -91,7 +111,7 @@ function processTransaction($tgId, $type, $amount, $description, $pdo, $refType 
                 $stmt->execute([
                     'user_id' => $referrerId,
                     'title'   => 'Referral Commission',
-                    'message' => "You earned " . number_format($commission, 2) . " ETB (7%) from your referred friend's deposit!",
+                    'message' => "You earned " . number_format($commission, 2) . " ETB ({$percentageText}) from your referred friend's deposit!",
                     'type'    => 'success'
                 ]);
             }
