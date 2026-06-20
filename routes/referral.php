@@ -67,30 +67,13 @@ if ($route === '/referral/apply') {
         // 5. Update inside transaction
         $pdo->beginTransaction();
         try {
-            // Give 20 ETB bonus to the newly referred user and bind referred_by
-            $stmt = $pdo->prepare('UPDATE auth SET referred_by = :ref_by, balance = balance + 20 WHERE tg_id = :tg_id');
+            // Bind referred_by to the newly referred user (no balance addition here)
+            $stmt = $pdo->prepare('UPDATE auth SET referred_by = :ref_by WHERE tg_id = :tg_id');
             $stmt->execute(['ref_by' => $referrer['tg_id'], 'tg_id' => $tgId]);
             
             // Add referred user tg_id to refers JSON array on referrer
             $stmt = $pdo->prepare('UPDATE auth SET refers = :refers WHERE tg_id = :tg_id');
             $stmt->execute(['refers' => json_encode($refersArray), 'tg_id' => $referrer['tg_id']]);
-            
-            // Log ledger transaction for bonus payout
-            $stmt = $pdo->prepare('
-                INSERT INTO transactions (user_id, type, amount, balance_after, reference_type, description) 
-                VALUES (:user_id, :type, 20.00, :bal_after, :ref_type, :desc)
-            ');
-            $stmt->execute([
-                'user_id'   => $tgId,
-                'type'      => 'referral_bonus',
-                'bal_after' => (float)$currentUser['balance'] + 20.0,
-                'ref_type'  => 'referral_code',
-                'desc'      => 'Applied referral code signup bonus'
-            ]);
-
-            // Add notification alert for current user
-            $stmt = $pdo->prepare("INSERT INTO alerts (user_id, title, message, type) VALUES (:user_id, 'Referral Bonus', 'You received 20 ETB bonus for using a referral code!', 'success')");
-            $stmt->execute(['user_id' => $tgId]);
             
             // Add notification alert for referrer
             $displayName = !empty($currentUser['first_name']) ? $currentUser['first_name'] : (!empty($currentUser['username']) ? $currentUser['username'] : 'Someone');
@@ -110,7 +93,7 @@ if ($route === '/referral/apply') {
         
         echo json_encode([
             'success'     => true,
-            'message'     => 'Referral code applied successfully! 20 ETB added.',
+            'message'     => 'Referral code applied successfully! You will get a 20% bonus on your first deposit.',
             'newBalance'  => $updatedUser ? (float)$updatedUser['balance'] : 0.0,
             'referred_by' => $updatedUser ? $updatedUser['referred_by'] : null
         ]);

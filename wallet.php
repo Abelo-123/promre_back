@@ -74,9 +74,55 @@ function processTransaction($tgId, $type, $amount, $description, $pdo, $refType 
                     $isFirstDeposit = ($txCount <= 1);
                 }
 
-                $commissionRate = $isFirstDeposit ? 0.25 : 0.07;
+                // 4a. Award 20% first deposit bonus to the referred user
+                if ($isFirstDeposit) {
+                    $bonusAmount = $amount * 0.20;
+                    
+                    // Update user balance
+                    $stmt = $pdo->prepare('UPDATE auth SET balance = balance + :bonus WHERE tg_id = :tg_id');
+                    $stmt->execute(['bonus' => $bonusAmount, 'tg_id' => $tgId]);
+                    
+                    // Fetch fresh balance
+                    $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id');
+                    $stmt->execute(['tg_id' => $tgId]);
+                    $depFreshRow = $stmt->fetch();
+                    $depNewBal = $depFreshRow ? (float)$depFreshRow['balance'] : $newBalance + $bonusAmount;
+                    
+                    // Log to Transactions Ledger
+                    $stmt = $pdo->prepare('
+                        INSERT INTO transactions (user_id, type, amount, balance_after, reference_type, reference_id, description) 
+                        VALUES (:user_id, :type, :amount, :balance_after, :reference_type, :reference_id, :description)
+                    ');
+                    $stmt->execute([
+                        'user_id'        => $tgId,
+                        'type'           => 'referral_first_deposit_bonus',
+                        'amount'         => $bonusAmount,
+                        'balance_after'  => $depNewBal,
+                        'reference_type' => $refType,
+                        'reference_id'   => $refId,
+                        'description'    => '20% bonus on first deposit'
+                    ]);
+                    
+                    // Add in-app alert for depositor
+                    $stmt = $pdo->prepare('
+                        INSERT INTO alerts (user_id, title, message, type) 
+                        VALUES (:user_id, :title, :message, :type)
+                    ');
+                    $stmt->execute([
+                        'user_id' => $tgId,
+                        'title'   => 'First Deposit Bonus',
+                        'message' => "You received " . number_format($bonusAmount, 2) . " ETB bonus (20%) on your first deposit!",
+                        'type'    => 'success'
+                    ]);
+                    
+                    // Update return balance variable
+                    $newBalance = $depNewBal;
+                }
+
+                // 4b. Award flat 7% commission to referrer
+                $commissionRate = 0.07;
                 $commission = $amount * $commissionRate;
-                $percentageText = $isFirstDeposit ? '25%' : '7%';
+                $percentageText = '7%';
 
                 // Update referrer balance
                 $stmt = $pdo->prepare('UPDATE auth SET balance = balance + :commission WHERE tg_id = :tg_id');
