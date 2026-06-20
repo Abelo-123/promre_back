@@ -69,6 +69,17 @@ try {
         PDO::ATTR_EMULATE_PREPARES   => false,
     ];
     $pdo = new PDO($dsn, $dbUser, $dbPass, $options);
+    
+    // Ensure transactions table columns are wide enough for referral types
+    try {
+        $pdo->exec("ALTER TABLE transactions MODIFY COLUMN type VARCHAR(50) NOT NULL");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE transactions MODIFY COLUMN reference_type VARCHAR(50) DEFAULT NULL");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE transactions MODIFY COLUMN reference_id VARCHAR(50) DEFAULT NULL");
+    } catch (Exception $e) {}
 } catch (PDOException $e) {
     header('Content-Type: application/json');
     http_response_code(500);
