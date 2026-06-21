@@ -252,6 +252,7 @@ if ($route === '/app/auth') {
             'user' => [
                 'id'             => $user['tg_id'],
                 'tg_id'          => $user['tg_id'],
+                'bot_id'         => $user['bot_id'],
                 'username'       => !empty($user['username']) ? $user['username'] : $username,
                 'first_name'     => !empty($user['first_name']) ? $user['first_name'] : $firstName,
                 'last_name'      => !empty($user['last_name']) ? $user['last_name'] : $lastName,
