@@ -8,10 +8,52 @@ require_once __DIR__ . '/config.php';
 $currentBotId = null;
 
 function getCurrentBotId() {
-    global $currentBotId, $primaryBotId;
+    global $currentBotId, $primaryBotId, $botTokens;
     if ($currentBotId !== null) {
         return $currentBotId;
     }
+    
+    // 1. Try to extract from initData in the current request
+    $initData = '';
+    if (isset($_REQUEST['initData'])) {
+        $initData = $_REQUEST['initData'];
+    } else {
+        // Check raw input JSON
+        $rawInput = file_get_contents('php://input');
+        $requestData = json_decode($rawInput, true);
+        if (isset($requestData['initData'])) {
+            $initData = $requestData['initData'];
+        }
+    }
+    
+    if (!empty($initData) && !empty($botTokens)) {
+        parse_str($initData, $params);
+        $hash = isset($params['hash']) ? $params['hash'] : null;
+        if ($hash) {
+            unset($params['hash']);
+            ksort($params);
+            $dataCheckArr = [];
+            foreach ($params as $key => $val) {
+                $dataCheckArr[] = "{$key}={$val}";
+            }
+            $dataCheckString = implode("\n", $dataCheckArr);
+            
+            foreach ($botTokens as $botId => $token) {
+                $secret = hash_hmac('sha256', $token, 'WebAppData', true);
+                $calculatedHash = hash_hmac('sha256', $dataCheckString, $secret);
+                if ($hash === $calculatedHash) {
+                    $currentBotId = $botId;
+                    if (session_status() === PHP_SESSION_NONE) {
+                        session_start();
+                    }
+                    $_SESSION['bot_id'] = $botId;
+                    return $currentBotId;
+                }
+            }
+        }
+    }
+    
+    // 2. Fall back to session
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
@@ -20,7 +62,7 @@ function getCurrentBotId() {
         return $currentBotId;
     }
     
-    // Check request params/headers as a fallback
+    // 3. Fall back to request parameter
     if (isset($_REQUEST['bot_id'])) {
         $currentBotId = $_REQUEST['bot_id'];
         $_SESSION['bot_id'] = $currentBotId;
