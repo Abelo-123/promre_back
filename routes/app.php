@@ -170,10 +170,13 @@ if ($route === '/app/auth') {
     $username = $tgUser && isset($tgUser['username']) ? $tgUser['username'] : 'local_user';
     $photoUrl = $tgUser && isset($tgUser['photo_url']) ? $tgUser['photo_url'] : '';
     
+    // Force currentBotId evaluation BEFORE user lookup to make sure session/globals are populated
+    $botId = getCurrentBotId();
+    
     try {
         // Look up user
         $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
         $user = $stmt->fetch();
         
         if (!$user) {
@@ -188,7 +191,7 @@ if ($route === '/app/auth') {
             ");
             $stmt->execute([
                 'tg_id'         => $tgId,
-                'bot_id'        => getCurrentBotId(),
+                'bot_id'        => $botId,
                 'username'      => $username,
                 'first_name'    => $firstName,
                 'last_name'     => $lastName,
@@ -203,7 +206,7 @@ if ($route === '/app/auth') {
             
             // Fetch newly created user
             $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-            $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+            $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
             $user = $stmt->fetch();
         } else {
             // User exists, update referral code if missing
@@ -214,7 +217,7 @@ if ($route === '/app/auth') {
                 $refCode = "REF{$randomHex}{$idSuffix}";
                 
                 $stmt = $pdo->prepare('UPDATE auth SET referral_code = :ref_code WHERE tg_id = :tg_id AND bot_id = :bot_id');
-                $stmt->execute(['ref_code' => $refCode, 'tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+                $stmt->execute(['ref_code' => $refCode, 'tg_id' => $tgId, 'bot_id' => $botId]);
             }
             
             // Update last login details
@@ -229,12 +232,12 @@ if ($route === '/app/auth') {
                 'last_name'  => $lastName,
                 'photo_url'  => $photoUrl,
                 'tg_id'      => $tgId,
-                'bot_id'     => getCurrentBotId()
+                'bot_id'     => $botId
             ]);
             
             // Re-fetch updated user
             $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-            $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+            $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
             $user = $stmt->fetch();
         }
         
