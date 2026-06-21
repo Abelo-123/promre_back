@@ -13,16 +13,30 @@ function getCurrentBotId() {
         return $currentBotId;
     }
     
-    // 1. Try to extract from initData in the current request
+    // 1. Check direct query/request parameter first
+    if (isset($_REQUEST['bot_id']) && !empty($_REQUEST['bot_id'])) {
+        $currentBotId = $_REQUEST['bot_id'];
+        if (session_status() === PHP_SESSION_NONE) session_start();
+        $_SESSION['bot_id'] = $currentBotId;
+        return $currentBotId;
+    }
+
+    // 2. Check JSON POST payload bot_id
+    $rawInput = file_get_contents('php://input');
+    $requestData = json_decode($rawInput, true);
+    if (is_array($requestData) && isset($requestData['bot_id']) && !empty($requestData['bot_id'])) {
+        $currentBotId = $requestData['bot_id'];
+        if (session_status() === PHP_SESSION_NONE) session_start();
+        $_SESSION['bot_id'] = $currentBotId;
+        return $currentBotId;
+    }
+
+    // 3. Try to extract from initData in the current request
     $initData = '';
     if (isset($_REQUEST['initData'])) {
         $initData = $_REQUEST['initData'];
-    } else {
-        $rawInput = file_get_contents('php://input');
-        $requestData = json_decode($rawInput, true);
-        if (isset($requestData['initData'])) {
-            $initData = $requestData['initData'];
-        }
+    } elseif (is_array($requestData) && isset($requestData['initData'])) {
+        $initData = $requestData['initData'];
     }
     
     if (!empty($initData) && !empty($botTokens)) {
