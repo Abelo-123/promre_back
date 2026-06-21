@@ -30,6 +30,16 @@ function getCurrentBotId() {
         $_SESSION['bot_id'] = $currentBotId;
         return $currentBotId;
     }
+    
+    // Quick regex scan of raw input for JSON property "bot_id" or "botId"
+    if (!empty($rawInput)) {
+        if (preg_match('/"bot_id"\s*:\s*"?(\d+)"?/', $rawInput, $matches)) {
+            $currentBotId = $matches[1];
+            if (session_status() === PHP_SESSION_NONE) session_start();
+            $_SESSION['bot_id'] = $currentBotId;
+            return $currentBotId;
+        }
+    }
 
     // 3. Try to extract from initData in the current request
     $initData = '';
