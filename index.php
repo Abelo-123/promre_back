@@ -126,7 +126,9 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
     }
 
     echo json_encode([
-        'getenv_BOT_TOKEN'   => $envToken ? substr($envToken, 0, 15) . '...' : 'NOT SET',
+        'getenv_BOT_TOKEN'   => $envToken ? substr(trim($envToken), 0, 30) . '...' : 'NOT SET',
+        'token_trimmed_len'  => $envToken ? strlen(trim($envToken)) : 0,
+        'token_raw_len'      => $envToken ? strlen($envToken) : 0,
         'bot_tokens_count'   => count($botTokens),
         'primary_bot_id'     => $primaryBotId,
         'initData_received'  => !empty($initRaw),
