@@ -81,8 +81,8 @@ if ($route === '/balance') {
     }
     
     try {
-        $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id');
-        $stmt->execute(['tg_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $row = $stmt->fetch();
         $balance = $row ? (float)$row['balance'] : 0.0;
         
@@ -110,11 +110,12 @@ if ($route === '/deposits') {
         $stmt = $pdo->prepare("
             SELECT id, amount, tx_ref as reference_id, status, 'Chapa' as method, created_at, completed_at 
             FROM deposits 
-            WHERE user_id = :user_id 
+            WHERE user_id = :user_id AND bot_id = :bot_id
             ORDER BY created_at DESC 
             LIMIT :limit
         ");
         $stmt->bindValue(':user_id', $tgId, PDO::PARAM_STR);
+        $stmt->bindValue(':bot_id', getCurrentBotId(), PDO::PARAM_STR);
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll();
@@ -158,23 +159,23 @@ if ($route === '/deposit') {
         }
         
         // Find or create user
-        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
-        $stmt->execute(['tg_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $user = $stmt->fetch();
         
         if (!$user) {
-            $stmt = $pdo->prepare("INSERT INTO auth (tg_id, balance, auth_provider, last_login) VALUES (:tg_id, 0.00, 'telegram', NOW())");
-            $stmt->execute(['tg_id' => $tgId]);
+            $stmt = $pdo->prepare("INSERT INTO auth (tg_id, bot_id, balance, auth_provider, last_login) VALUES (:tg_id, :bot_id, 0.00, 'telegram', NOW())");
+            $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
             
-            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
-            $stmt->execute(['tg_id' => $tgId]);
+            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+            $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
             $user = $stmt->fetch();
         }
         
         // FLOW A: INLINE SDK MODE (tx_ref provided by client SDK)
         if (!empty($txRef)) {
-            $stmt = $pdo->prepare('SELECT id FROM deposits WHERE tx_ref = :tx_ref');
-            $stmt->execute(['tx_ref' => $txRef]);
+            $stmt = $pdo->prepare('SELECT id FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id');
+            $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
             $existing = $stmt->fetch();
             
             if ($existing) {
@@ -187,8 +188,8 @@ if ($route === '/deposit') {
             }
             
             // Create pending deposit
-            $stmt = $pdo->prepare("INSERT INTO deposits (user_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :amount, :tx_ref, 'pending', :reference_id)");
-            $stmt->execute(['user_id' => $tgId, 'amount' => $amount, 'tx_ref' => $txRef, 'reference_id' => $txRef]);
+            $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending', :reference_id)");
+            $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $txRef, 'reference_id' => $txRef]);
             $depositId = $pdo->lastInsertId();
             
             echo json_encode([
@@ -202,8 +203,8 @@ if ($route === '/deposit') {
         // FLOW B: REDIRECT MODE (server generates reference + calls Chapa API)
         $generatedTxRef = "DEP-{$tgId}-" . time() . "-" . bin2hex(random_bytes(4));
         
-        $stmt = $pdo->prepare("INSERT INTO deposits (user_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :amount, :tx_ref, 'pending', :reference_id)");
-        $stmt->execute(['user_id' => $tgId, 'amount' => $amount, 'tx_ref' => $generatedTxRef, 'reference_id' => $generatedTxRef]);
+        $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending', :reference_id)");
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $generatedTxRef, 'reference_id' => $generatedTxRef]);
         
         // Initialize payment with Chapa
         $chapaResult = chapaInitializePayment([
@@ -218,8 +219,8 @@ if ($route === '/deposit') {
         if ($chapaResult['success'] && isset($chapaResult['data']['checkout_url'])) {
             $checkoutUrl = $chapaResult['data']['checkout_url'];
             
-            $stmt = $pdo->prepare('UPDATE deposits SET checkout_url = :checkout_url WHERE tx_ref = :tx_ref');
-            $stmt->execute(['checkout_url' => $checkoutUrl, 'tx_ref' => $generatedTxRef]);
+            $stmt = $pdo->prepare('UPDATE deposits SET checkout_url = :checkout_url WHERE tx_ref = :tx_ref AND bot_id = :bot_id');
+            $stmt->execute(['checkout_url' => $checkoutUrl, 'tx_ref' => $generatedTxRef, 'bot_id' => getCurrentBotId()]);
             
             echo json_encode([
                 'success'      => true,
@@ -258,13 +259,13 @@ if ($route === '/complete-deposit') {
         }
         
         // 1. Check if already successfully processed
-        $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref');
-        $stmt->execute(['tx_ref' => $txRef]);
+        $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id');
+        $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
         $deposit = $stmt->fetch();
         
         if ($deposit && $deposit['status'] === 'success') {
-            $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id');
-            $stmt->execute(['tg_id' => $deposit['user_id']]);
+            $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+            $stmt->execute(['tg_id' => $deposit['user_id'], 'bot_id' => getCurrentBotId()]);
             $u = $stmt->fetch();
             echo json_encode([
                 'success'           => true,
@@ -283,17 +284,17 @@ if ($route === '/complete-deposit') {
         $pdo->beginTransaction();
         try {
             // Lock deposit row FOR UPDATE
-            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
-            $stmt->execute(['tx_ref' => $txRef]);
+            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id FOR UPDATE');
+            $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
             $deposit = $stmt->fetch();
             
             if (!$deposit) {
                 if ($amount > 0) {
-                    $stmt = $pdo->prepare("INSERT INTO deposits (user_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :amount, :tx_ref, 'pending', :reference_id)");
-                    $stmt->execute(['user_id' => $tgId, 'amount' => $amount, 'tx_ref' => $txRef, 'reference_id' => $txRef]);
+                    $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending', :reference_id)");
+                    $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $txRef, 'reference_id' => $txRef]);
                     
-                    $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
-                    $stmt->execute(['tx_ref' => $txRef]);
+                    $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id FOR UPDATE');
+                    $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
                     $deposit = $stmt->fetch();
                 } else {
                     $pdo->rollBack();
@@ -304,8 +305,8 @@ if ($route === '/complete-deposit') {
             
             if ($deposit['status'] === 'success') {
                 $pdo->rollBack();
-                $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id');
-                $stmt->execute(['tg_id' => $deposit['user_id']]);
+                $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+                $stmt->execute(['tg_id' => $deposit['user_id'], 'bot_id' => getCurrentBotId()]);
                 $u = $stmt->fetch();
                 echo json_encode([
                     'success'           => true,
@@ -320,11 +321,12 @@ if ($route === '/complete-deposit') {
                 $verifiedChapaRef = isset($verifyResult['data']['reference']) ? $verifyResult['data']['reference'] : $chapaRef;
                 $responseJson = json_encode($verifyResult['raw']);
                 
-                $stmt = $pdo->prepare("UPDATE deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE id = :id");
+                $stmt = $pdo->prepare("UPDATE deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE id = :id AND bot_id = :bot_id");
                 $stmt->execute([
                     'chapa_ref' => $verifiedChapaRef,
                     'resp'      => $responseJson,
-                    'id'        => $deposit['id']
+                    'id'        => $deposit['id'],
+                    'bot_id'    => getCurrentBotId()
                 ]);
                 
                 $newBalance = processTransaction(
@@ -341,8 +343,8 @@ if ($route === '/complete-deposit') {
                 
                 // Trigger Async Notification
                 try {
-                    $stmt = $pdo->prepare('SELECT first_name FROM auth WHERE tg_id = :tg_id');
-                    $stmt->execute(['tg_id' => (string)$deposit['user_id']]);
+                    $stmt = $pdo->prepare('SELECT first_name FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+                    $stmt->execute(['tg_id' => (string)$deposit['user_id'], 'bot_id' => getCurrentBotId()]);
                     $row = $stmt->fetch();
                     $firstName = $row ? $row['first_name'] : 'User';
                     notifyDeposit((string)$deposit['user_id'], $verifiedAmount, $firstName);
@@ -390,8 +392,8 @@ if ($route === '/verify-deposit') {
         }
         
         // Check local database
-        $stmt = $pdo->prepare('SELECT status, amount, user_id FROM deposits WHERE tx_ref = :tx_ref');
-        $stmt->execute(['tx_ref' => $txRef]);
+        $stmt = $pdo->prepare('SELECT status, amount, user_id FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id');
+        $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
         $depositCheck = $stmt->fetch();
         
         if (!$depositCheck) {
@@ -400,8 +402,8 @@ if ($route === '/verify-deposit') {
         }
         
         if ($depositCheck['status'] === 'success') {
-            $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id');
-            $stmt->execute(['tg_id' => $tgId]);
+            $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+            $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
             $u = $stmt->fetch();
             echo json_encode([
                 'success'           => true,
@@ -432,8 +434,8 @@ if ($route === '/verify-deposit') {
         if (!$isActuallySuccess) {
             $isFailed = ($chapaStatus === 'failed' || strpos($chapaStatus, 'reject') !== false || strpos($chapaStatus, 'cancel') !== false);
             if ($isFailed) {
-                $stmt = $pdo->prepare("UPDATE deposits SET status = 'failed' WHERE tx_ref = :tx_ref");
-                $stmt->execute(['tx_ref' => $txRef]);
+                $stmt = $pdo->prepare("UPDATE deposits SET status = 'failed' WHERE tx_ref = :tx_ref AND bot_id = :bot_id");
+                $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
                 
                 echo json_encode([
                     'success'      => false,
@@ -455,14 +457,14 @@ if ($route === '/verify-deposit') {
         // Success Flow
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
-            $stmt->execute(['tx_ref' => $txRef]);
+            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id FOR UPDATE');
+            $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
             $deposit = $stmt->fetch();
             
             if (!$deposit || $deposit['status'] === 'success') {
                 $pdo->rollBack();
-                $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id');
-                $stmt->execute(['tg_id' => $tgId]);
+                $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+                $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
                 $u = $stmt->fetch();
                 echo json_encode([
                     'success'           => true,
@@ -476,11 +478,12 @@ if ($route === '/verify-deposit') {
             $chapaRef = isset($chapaData['reference']) ? $chapaData['reference'] : '';
             $responseJson = json_encode($verifyResult['raw']);
             
-            $stmt = $pdo->prepare("UPDATE deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE id = :id");
+            $stmt = $pdo->prepare("UPDATE deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE id = :id AND bot_id = :bot_id");
             $stmt->execute([
                 'chapa_ref' => $chapaRef,
                 'resp'      => $responseJson,
-                'id'        => $deposit['id']
+                'id'        => $deposit['id'],
+                'bot_id'    => getCurrentBotId()
             ]);
             
             $newBalance = processTransaction(
@@ -497,8 +500,8 @@ if ($route === '/verify-deposit') {
             
             // Notify deposit
             try {
-                $stmt = $pdo->prepare('SELECT first_name FROM auth WHERE tg_id = :tg_id');
-                $stmt->execute(['tg_id' => (string)$deposit['user_id']]);
+                $stmt = $pdo->prepare('SELECT first_name FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+                $stmt->execute(['tg_id' => (string)$deposit['user_id'], 'bot_id' => getCurrentBotId()]);
                 $row = $stmt->fetch();
                 $firstName = $row ? $row['first_name'] : 'User';
                 notifyDeposit((string)$deposit['user_id'], $verifiedAmount, $firstName);
@@ -547,7 +550,7 @@ if ($route === '/chapa-callback') {
     }
     
     try {
-        $stmt = $pdo->prepare('SELECT status FROM deposits WHERE tx_ref = :tx_ref');
+        $stmt = $pdo->prepare('SELECT status, bot_id FROM deposits WHERE tx_ref = :tx_ref');
         $stmt->execute(['tx_ref' => $txRef]);
         $depositCheck = $stmt->fetch();
         
@@ -555,6 +558,13 @@ if ($route === '/chapa-callback') {
             echo json_encode(['success' => false, 'message' => 'Deposit not found']);
             exit;
         }
+        
+        // Dynamically set context bot_id
+        $currentBotId = $depositCheck['bot_id'];
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        $_SESSION['bot_id'] = $currentBotId;
         
         if ($depositCheck['status'] === 'success') {
             echo json_encode(['success' => true, 'message' => 'Already processed']);
@@ -569,8 +579,8 @@ if ($route === '/chapa-callback') {
         // 3. Write within transaction
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
-            $stmt->execute(['tx_ref' => $txRef]);
+            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id FOR UPDATE');
+            $stmt->execute(['tx_ref' => $txRef, 'bot_id' => $currentBotId]);
             $deposit = $stmt->fetch();
             
             if (!$deposit || $deposit['status'] === 'success') {
@@ -584,11 +594,12 @@ if ($route === '/chapa-callback') {
                 $chapaRef = isset($verifyResult['data']['reference']) ? $verifyResult['data']['reference'] : '';
                 $responseJson = json_encode($verifyResult['raw']);
                 
-                $stmt = $pdo->prepare("UPDATE deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE id = :id");
+                $stmt = $pdo->prepare("UPDATE deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE id = :id AND bot_id = :bot_id");
                 $stmt->execute([
                     'chapa_ref' => $chapaRef,
                     'resp'      => $responseJson,
-                    'id'        => $deposit['id']
+                    'id'        => $deposit['id'],
+                    'bot_id'    => $currentBotId
                 ]);
                 
                 processTransaction(
@@ -605,8 +616,8 @@ if ($route === '/chapa-callback') {
                 
                 // Notify admin bot
                 try {
-                    $stmt = $pdo->prepare('SELECT first_name FROM auth WHERE tg_id = :tg_id');
-                    $stmt->execute(['tg_id' => (string)$deposit['user_id']]);
+                    $stmt = $pdo->prepare('SELECT first_name FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+                    $stmt->execute(['tg_id' => (string)$deposit['user_id'], 'bot_id' => $currentBotId]);
                     $row = $stmt->fetch();
                     $firstName = $row ? $row['first_name'] : 'User';
                     notifyDeposit((string)$deposit['user_id'], $verifiedAmount, $firstName);
@@ -616,8 +627,8 @@ if ($route === '/chapa-callback') {
             } else {
                 $realStatus = isset($verifyResult['data']['status']) ? $verifyResult['data']['status'] : (isset($verifyResult['raw']['status']) ? $verifyResult['raw']['status'] : 'pending');
                 if (strtolower($realStatus) === 'failed') {
-                    $stmt = $pdo->prepare("UPDATE deposits SET status = 'failed' WHERE id = :id");
-                    $stmt->execute(['id' => $deposit['id']]);
+                    $stmt = $pdo->prepare("UPDATE deposits SET status = 'failed' WHERE id = :id AND bot_id = :bot_id");
+                    $stmt->execute(['id' => $deposit['id'], 'bot_id' => $currentBotId]);
                 }
                 
                 $pdo->commit();

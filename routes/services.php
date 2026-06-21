@@ -96,7 +96,8 @@ if ($route === '/categories') {
         // Check local database for disabled service IDs
         $disabledServiceIds = [];
         try {
-            $stmt = $pdo->query('SELECT service_id FROM service_custom WHERE is_enabled = 0');
+            $stmt = $pdo->prepare('SELECT service_id FROM service_custom WHERE is_enabled = 0 AND bot_id = :bot_id');
+            $stmt->execute(['bot_id' => getCurrentBotId()]);
             $disabledRows = $stmt->fetchAll();
             foreach ($disabledRows as $row) {
                 $disabledServiceIds[] = (int)$row['service_id'];
@@ -219,7 +220,8 @@ if ($route === '/services') {
         // 1. Get database configs
         $rateMultiplier = 55.0;
         try {
-            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier'");
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' AND bot_id = :bot_id");
+            $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
             if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 55.0;
         } catch (Exception $e) {}
@@ -227,7 +229,8 @@ if ($route === '/services') {
         // Custom pricing map
         $customPricingMap = [];
         try {
-            $stmt = $pdo->query('SELECT service_id, custom_rate, profit_margin, is_enabled FROM service_custom');
+            $stmt = $pdo->prepare('SELECT service_id, custom_rate, profit_margin, is_enabled FROM service_custom WHERE bot_id = :bot_id');
+            $stmt->execute(['bot_id' => getCurrentBotId()]);
             $customRows = $stmt->fetchAll();
             foreach ($customRows as $row) {
                 $customPricingMap[(int)$row['service_id']] = [
@@ -309,7 +312,8 @@ if ($route === '/services') {
         if ($reqCategory === 'Top Services') {
             $topServicesIdsStr = '';
             try {
-                $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'top_services_ids'");
+                $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'top_services_ids' AND bot_id = :bot_id");
+                $stmt->execute(['bot_id' => getCurrentBotId()]);
                 $row = $stmt->fetch();
                 if ($row) $topServicesIdsStr = $row['setting_value'] ?: '';
             } catch (Exception $e) {}
@@ -343,7 +347,8 @@ if ($route === '/services') {
 if ($route === '/services/top') {
     try {
         // Get recommended service IDs
-        $stmt = $pdo->query('SELECT service_id FROM recommended_services');
+        $stmt = $pdo->prepare('SELECT service_id FROM recommended_services WHERE bot_id = :bot_id');
+        $stmt->execute(['bot_id' => getCurrentBotId()]);
         $recRows = $stmt->fetchAll();
         $recommendedIds = [];
         foreach ($recRows as $r) {
@@ -365,7 +370,8 @@ if ($route === '/services/top') {
         // Get multiplier
         $rateMultiplier = 55.0;
         try {
-            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier'");
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' AND bot_id = :bot_id");
+            $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
             if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 55.0;
         } catch (Exception $e) {}
@@ -420,12 +426,12 @@ if ($route === '/services/recommended') {
             }
 
             if ($action === 'remove') {
-                $stmt = $pdo->prepare('DELETE FROM recommended_services WHERE service_id = :service_id');
-                $stmt->execute(['service_id' => $serviceId]);
+                $stmt = $pdo->prepare('DELETE FROM recommended_services WHERE service_id = :service_id AND bot_id = :bot_id');
+                $stmt->execute(['service_id' => $serviceId, 'bot_id' => getCurrentBotId()]);
                 echo json_encode(['success' => true, 'message' => "Service {$serviceId} removed from recommended"]);
             } else {
-                $stmt = $pdo->prepare('INSERT IGNORE INTO recommended_services (service_id) VALUES (:service_id)');
-                $stmt->execute(['service_id' => $serviceId]);
+                $stmt = $pdo->prepare('INSERT IGNORE INTO recommended_services (service_id, bot_id) VALUES (:service_id, :bot_id)');
+                $stmt->execute(['service_id' => $serviceId, 'bot_id' => getCurrentBotId()]);
                 echo json_encode(['success' => true, 'message' => "Service {$serviceId} added to recommended"]);
             }
         } catch (Exception $e) {
@@ -434,7 +440,8 @@ if ($route === '/services/recommended') {
         }
     } else { // GET
         try {
-            $stmt = $pdo->query('SELECT * FROM recommended_services ORDER BY id DESC');
+            $stmt = $pdo->prepare('SELECT * FROM recommended_services WHERE bot_id = :bot_id ORDER BY id DESC');
+            $stmt->execute(['bot_id' => getCurrentBotId()]);
             $rows = $stmt->fetchAll();
             echo json_encode(['success' => true, 'recommended' => $rows]);
         } catch (Exception $e) {

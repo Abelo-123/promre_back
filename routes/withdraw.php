@@ -38,8 +38,8 @@ if ($route === '/withdraw/request') {
         $pdo->beginTransaction();
         try {
             // Lock user auth row to check referral balance safely
-            $stmt = $pdo->prepare('SELECT referral_balance FROM auth WHERE tg_id = :user_id FOR UPDATE');
-            $stmt->execute(['user_id' => $userId]);
+            $stmt = $pdo->prepare('SELECT referral_balance FROM auth WHERE tg_id = :user_id AND bot_id = :bot_id FOR UPDATE');
+            $stmt->execute(['user_id' => $userId, 'bot_id' => getCurrentBotId()]);
             $user = $stmt->fetch();
             
             if (!$user) {
@@ -56,16 +56,17 @@ if ($route === '/withdraw/request') {
             }
             
             // Deduct referral balance
-            $stmt = $pdo->prepare('UPDATE auth SET referral_balance = referral_balance - :amount WHERE tg_id = :user_id');
-            $stmt->execute(['amount' => $amount, 'user_id' => $userId]);
+            $stmt = $pdo->prepare('UPDATE auth SET referral_balance = referral_balance - :amount WHERE tg_id = :user_id AND bot_id = :bot_id');
+            $stmt->execute(['amount' => $amount, 'user_id' => $userId, 'bot_id' => getCurrentBotId()]);
             
             // Insert into withdrawals
             $stmt = $pdo->prepare('
-                INSERT INTO withdrawals (user_id, amount, full_name, bank_name, account_number, status) 
-                VALUES (:user_id, :amount, :name, :bank, :account, \'pending\')
+                INSERT INTO withdrawals (user_id, bot_id, amount, full_name, bank_name, account_number, status) 
+                VALUES (:user_id, :bot_id, :amount, :name, :bank, :account, \'pending\')
             ');
             $stmt->execute([
                 'user_id' => $userId,
+                'bot_id'  => getCurrentBotId(),
                 'amount'  => $amount,
                 'name'    => $fullName,
                 'bank'    => $bankName,
@@ -75,11 +76,12 @@ if ($route === '/withdraw/request') {
             // Log ledger transaction
             $newReferralBalance = $referralBalance - $amount;
             $stmt = $pdo->prepare('
-                INSERT INTO transactions (user_id, type, amount, balance_after, reference_type, description) 
-                VALUES (:user_id, \'referral_withdrawal\', :amount, :bal_after, \'withdrawal\', :desc)
+                INSERT INTO transactions (user_id, bot_id, type, amount, balance_after, reference_type, description) 
+                VALUES (:user_id, :bot_id, \'referral_withdrawal\', :amount, :bal_after, \'withdrawal\', :desc)
             ');
             $stmt->execute([
                 'user_id'   => $userId,
+                'bot_id'    => getCurrentBotId(),
                 'amount'    => -$amount,
                 'bal_after' => $newReferralBalance,
                 'desc'      => "Referral withdrawal request to {$bankName}"
@@ -103,8 +105,8 @@ if ($route === '/withdraw/history') {
     try {
         $userId = getWithdrawAuthUserId($requestData);
         
-        $stmt = $pdo->prepare('SELECT * FROM withdrawals WHERE user_id = :user_id ORDER BY created_at DESC');
-        $stmt->execute(['user_id' => $userId]);
+        $stmt = $pdo->prepare('SELECT * FROM withdrawals WHERE user_id = :user_id AND bot_id = :bot_id ORDER BY created_at DESC');
+        $stmt->execute(['user_id' => $userId, 'bot_id' => getCurrentBotId()]);
         $rows = $stmt->fetchAll();
         
         // Normalize outputs
@@ -114,8 +116,8 @@ if ($route === '/withdraw/history') {
         }
         
         // Fetch current referral balance
-        $stmt = $pdo->prepare('SELECT referral_balance FROM auth WHERE tg_id = :user_id');
-        $stmt->execute(['user_id' => $userId]);
+        $stmt = $pdo->prepare('SELECT referral_balance FROM auth WHERE tg_id = :user_id AND bot_id = :bot_id');
+        $stmt->execute(['user_id' => $userId, 'bot_id' => getCurrentBotId()]);
         $user = $stmt->fetch();
         $referralBalance = $user ? (float)$user['referral_balance'] : 0.0;
         
@@ -129,12 +131,14 @@ if ($route === '/withdraw/history') {
 // ─── ROUTE: /withdraw/admin/list (GET admin) ──────────────────────────────
 if ($route === '/withdraw/admin/list') {
     try {
-        $stmt = $pdo->query('
+        $stmt = $pdo->prepare('
             SELECT w.*, a.username, a.first_name, a.last_name 
             FROM withdrawals w 
-            LEFT JOIN auth a ON w.user_id = a.tg_id 
+            LEFT JOIN auth a ON w.user_id = a.tg_id AND w.bot_id = a.bot_id
+            WHERE w.bot_id = :bot_id
             ORDER BY w.created_at DESC
         ');
+        $stmt->execute(['bot_id' => getCurrentBotId()]);
         $rows = $stmt->fetchAll();
         
         foreach ($rows as &$r) {
@@ -160,8 +164,8 @@ if ($route === '/withdraw/admin/approve') {
         
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('SELECT * FROM withdrawals WHERE id = :id FOR UPDATE');
-            $stmt->execute(['id' => $id]);
+            $stmt = $pdo->prepare('SELECT * FROM withdrawals WHERE id = :id AND bot_id = :bot_id FOR UPDATE');
+            $stmt->execute(['id' => $id, 'bot_id' => getCurrentBotId()]);
             $w = $stmt->fetch();
             
             if (!$w) {
@@ -177,16 +181,17 @@ if ($route === '/withdraw/admin/approve') {
             }
             
             // Mark completed
-            $stmt = $pdo->prepare('UPDATE withdrawals SET status = \'done\' WHERE id = :id');
-            $stmt->execute(['id' => $id]);
+            $stmt = $pdo->prepare('UPDATE withdrawals SET status = \'done\' WHERE id = :id AND bot_id = :bot_id');
+            $stmt->execute(['id' => $id, 'bot_id' => getCurrentBotId()]);
             
             // Add user alert notification
             $stmt = $pdo->prepare('
-                INSERT INTO alerts (user_id, title, message, type) 
-                VALUES (:user_id, \'Withdrawal Done\', :msg, \'success\')
+                INSERT INTO alerts (user_id, bot_id, title, message, type) 
+                VALUES (:user_id, :bot_id, \'Withdrawal Done\', :msg, \'success\')
             ');
             $stmt->execute([
                 'user_id' => $w['user_id'],
+                'bot_id'  => getCurrentBotId(),
                 'msg'     => "Your withdrawal request of " . number_format((float)$w['amount'], 2) . " ETB has been marked as DONE and transferred to your bank account!"
             ]);
             

@@ -45,8 +45,8 @@ if ($route === '/orders/stream') {
     
     // Initial fetch of user's active orders to baseline their state
     try {
-        $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id");
-        $stmt->execute(['user_id' => $tgId]);
+        $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id AND bot_id = :bot_id");
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $orders = $stmt->fetchAll();
         foreach ($orders as $o) {
             $lastOrderStates[(int)$o['id']] = [
@@ -69,8 +69,8 @@ if ($route === '/orders/stream') {
         }
         
         try {
-            $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id");
-            $stmt->execute(['user_id' => $tgId]);
+            $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id AND bot_id = :bot_id");
+            $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
             $currentOrders = $stmt->fetchAll();
             
             foreach ($currentOrders as $co) {
@@ -159,13 +159,14 @@ if ($route === '/orders/place') {
         $pdo->beginTransaction();
         
         // 1. Get rate multiplier
-        $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier'");
+        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' AND bot_id = :bot_id");
+        $stmt->execute(['bot_id' => getCurrentBotId()]);
         $row = $stmt->fetch();
         $rateMultiplier = $row ? (float)$row['setting_value'] : 55.0;
 
         // 2. Lock user auth row to prevent race conditions
-        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id FOR UPDATE');
-        $stmt->execute(['tg_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id FOR UPDATE');
+        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $user = $stmt->fetch();
         if (!$user) {
             $pdo->rollBack();
@@ -195,8 +196,8 @@ if ($route === '/orders/place') {
         }
 
         // 4. Fetch custom pricing configurations
-        $stmt = $pdo->prepare('SELECT custom_rate, profit_margin, is_enabled FROM service_custom WHERE service_id = :service_id');
-        $stmt->execute(['service_id' => $serviceId]);
+        $stmt = $pdo->prepare('SELECT custom_rate, profit_margin, is_enabled FROM service_custom WHERE service_id = :service_id AND bot_id = :bot_id');
+        $stmt->execute(['service_id' => $serviceId, 'bot_id' => getCurrentBotId()]);
         $custom = $stmt->fetch();
         
         if ($custom && (int)$custom['is_enabled'] === 0) {
@@ -273,11 +274,12 @@ if ($route === '/orders/place') {
         // 7. Insert Order into DB
         $stmt = $pdo->prepare("
             INSERT INTO orders 
-            (user_id, service_id, service_name, link, target_link, quantity, api_order_id, charge, status, created_at) 
-            VALUES (:user_id, :service_id, :service_name, :link, :target_link, :quantity, :api_order_id, :charge, 'pending', NOW())
+            (user_id, bot_id, service_id, service_name, link, target_link, quantity, api_order_id, charge, status, created_at) 
+            VALUES (:user_id, :bot_id, :service_id, :service_name, :link, :target_link, :quantity, :api_order_id, :charge, 'pending', NOW())
         ");
         $stmt->execute([
             'user_id'      => $tgId,
+            'bot_id'       => getCurrentBotId(),
             'service_id'   => $serviceId,
             'service_name' => $serviceData['name'],
             'link'         => $link,
@@ -328,8 +330,8 @@ if ($route === '/orders/list') {
     }
     
     try {
-        $stmt = $pdo->prepare('SELECT * FROM orders WHERE user_id = :user_id ORDER BY created_at DESC LIMIT 100');
-        $stmt->execute(['user_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT * FROM orders WHERE user_id = :user_id AND bot_id = :bot_id ORDER BY created_at DESC LIMIT 100');
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $rows = $stmt->fetchAll();
         
         // Ensure numeric formats
@@ -363,9 +365,9 @@ if ($route === '/orders/status') {
         $stmt = $pdo->prepare("
             SELECT id, api_order_id, charge, quantity, status 
             FROM orders 
-            WHERE user_id = :user_id AND status IN ('pending', 'in_progress', 'processing')
+            WHERE user_id = :user_id AND bot_id = :bot_id AND status IN ('pending', 'in_progress', 'processing')
         ");
-        $stmt->execute(['user_id' => $tgId]);
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $activeOrders = $stmt->fetchAll();
 
         if (count($activeOrders) === 0) {
@@ -425,12 +427,13 @@ if ($route === '/orders/status') {
                     }
                 }
 
-                $stmt = $pdo->prepare('UPDATE orders SET status = :status, start_count = :start, remains = :remains WHERE id = :id');
+                $stmt = $pdo->prepare('UPDATE orders SET status = :status, start_count = :start, remains = :remains WHERE id = :id AND bot_id = :bot_id');
                 $stmt->execute([
                     'status' => $newStatus,
                     'start'  => isset($info['start_count']) ? (int)$info['start_count'] : 0,
                     'remains' => isset($info['remains']) ? (int)$info['remains'] : 0,
-                    'id'     => $order['id']
+                    'id'     => $order['id'],
+                    'bot_id' => getCurrentBotId()
                 ]);
 
                 $updated[] = [
@@ -459,8 +462,8 @@ if ($route === '/orders/refill') {
     try {
         $orderId = isset($requestData['order_id']) ? (int)$requestData['order_id'] : 0;
         
-        $stmt = $pdo->prepare('SELECT api_order_id FROM orders WHERE id = :id AND user_id = :user_id');
-        $stmt->execute(['id' => $orderId, 'user_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT api_order_id FROM orders WHERE id = :id AND user_id = :user_id AND bot_id = :bot_id');
+        $stmt->execute(['id' => $orderId, 'user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $order = $stmt->fetch();
         
         if (!$order) {

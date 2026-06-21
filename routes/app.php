@@ -22,8 +22,29 @@ if ($route === '/app/log-init-data') {
 // Route: /app/settings (GET)
 if ($route === '/app/settings') {
     try {
-        $stmt = $pdo->query('SELECT setting_key, setting_value FROM settings');
+        $stmt = $pdo->prepare('SELECT setting_key, setting_value FROM settings WHERE bot_id = :bot_id');
+        $stmt->execute(['bot_id' => getCurrentBotId()]);
         $rows = $stmt->fetchAll();
+        
+        if (empty($rows)) {
+            // Auto-seed for this bot by copying primary bot settings
+            try {
+                $copyStmt = $pdo->prepare("
+                    INSERT INTO settings (setting_key, bot_id, setting_value)
+                    SELECT setting_key, :new_bot_id, setting_value 
+                    FROM settings 
+                    WHERE bot_id = :primary_bot_id
+                ");
+                $copyStmt->execute([
+                    'new_bot_id' => getCurrentBotId(),
+                    'primary_bot_id' => $primaryBotId
+                ]);
+                
+                // Re-fetch
+                $stmt->execute(['bot_id' => getCurrentBotId()]);
+                $rows = $stmt->fetchAll();
+            } catch (Exception $e) {}
+        }
         
         $settings = [
             'rateMultiplier' => 55.0,
@@ -66,7 +87,8 @@ if ($route === '/app/settings') {
 // Route: /app/recommended (GET)
 if ($route === '/app/recommended') {
     try {
-        $stmt = $pdo->query('SELECT service_id FROM recommended_services');
+        $stmt = $pdo->prepare('SELECT service_id FROM recommended_services WHERE bot_id = :bot_id');
+        $stmt->execute(['bot_id' => getCurrentBotId()]);
         $rows = $stmt->fetchAll();
         $ids = [];
         foreach ($rows as $r) {
@@ -90,8 +112,8 @@ if ($route === '/app/alerts') {
     }
     
     try {
-        $stmt = $pdo->prepare('SELECT * FROM alerts WHERE user_id = :user_id ORDER BY created_at DESC LIMIT 50');
-        $stmt->execute(['user_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT * FROM alerts WHERE user_id = :user_id AND bot_id = :bot_id ORDER BY created_at DESC LIMIT 50');
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $alerts = $stmt->fetchAll();
         
         $unreadCount = 0;
@@ -122,8 +144,8 @@ if ($route === '/app/alerts/mark-read') {
     }
     
     try {
-        $stmt = $pdo->prepare('UPDATE alerts SET is_read = 1 WHERE user_id = :user_id');
-        $stmt->execute(['user_id' => $tgId]);
+        $stmt = $pdo->prepare('UPDATE alerts SET is_read = 1 WHERE user_id = :user_id AND bot_id = :bot_id');
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         echo json_encode(['success' => false]);
@@ -150,8 +172,8 @@ if ($route === '/app/auth') {
     
     try {
         // Look up user
-        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
-        $stmt->execute(['tg_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $user = $stmt->fetch();
         
         if (!$user) {
@@ -161,11 +183,12 @@ if ($route === '/app/auth') {
             $newRefCode = "REF{$randomHex}{$idSuffix}";
             
             $stmt = $pdo->prepare("
-                INSERT INTO auth (tg_id, username, first_name, last_name, photo_url, balance, auth_provider, last_login, referral_code) 
-                VALUES (:tg_id, :username, :first_name, :last_name, :photo_url, 0.00, 'telegram', NOW(), :referral_code)
+                INSERT INTO auth (tg_id, bot_id, username, first_name, last_name, photo_url, balance, auth_provider, last_login, referral_code) 
+                VALUES (:tg_id, :bot_id, :username, :first_name, :last_name, :photo_url, 0.00, 'telegram', NOW(), :referral_code)
             ");
             $stmt->execute([
                 'tg_id'         => $tgId,
+                'bot_id'        => getCurrentBotId(),
                 'username'      => $username,
                 'first_name'    => $firstName,
                 'last_name'     => $lastName,
@@ -179,8 +202,8 @@ if ($route === '/app/auth') {
             } catch (Exception $e) {}
             
             // Fetch newly created user
-            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
-            $stmt->execute(['tg_id' => $tgId]);
+            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+            $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
             $user = $stmt->fetch();
         } else {
             // User exists, update referral code if missing
@@ -190,27 +213,28 @@ if ($route === '/app/auth') {
                 $idSuffix = substr($tgId, -3);
                 $refCode = "REF{$randomHex}{$idSuffix}";
                 
-                $stmt = $pdo->prepare('UPDATE auth SET referral_code = :ref_code WHERE tg_id = :tg_id');
-                $stmt->execute(['ref_code' => $refCode, 'tg_id' => $tgId]);
+                $stmt = $pdo->prepare('UPDATE auth SET referral_code = :ref_code WHERE tg_id = :tg_id AND bot_id = :bot_id');
+                $stmt->execute(['ref_code' => $refCode, 'tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
             }
             
             // Update last login details
             $stmt = $pdo->prepare('
                 UPDATE auth 
                 SET username = :username, first_name = :first_name, last_name = :last_name, photo_url = :photo_url, last_login = NOW() 
-                WHERE tg_id = :tg_id
+                WHERE tg_id = :tg_id AND bot_id = :bot_id
             ');
             $stmt->execute([
                 'username'   => $username,
                 'first_name' => $firstName,
                 'last_name'  => $lastName,
                 'photo_url'  => $photoUrl,
-                'tg_id'      => $tgId
+                'tg_id'      => $tgId,
+                'bot_id'     => getCurrentBotId()
             ]);
             
             // Re-fetch updated user
-            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
-            $stmt->execute(['tg_id' => $tgId]);
+            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+            $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
             $user = $stmt->fetch();
         }
         

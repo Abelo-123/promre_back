@@ -24,14 +24,14 @@ try {
             exit;
         }
         
-        $stmt = $pdo->prepare('INSERT INTO chat_messages (user_id, message, is_admin, created_at) VALUES (:user_id, :message, 0, NOW())');
-        $stmt->execute(['user_id' => $tgId, 'message' => $message]);
+        $stmt = $pdo->prepare('INSERT INTO chat_messages (user_id, bot_id, message, is_admin, created_at) VALUES (:user_id, :bot_id, :message, 0, NOW())');
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'message' => $message]);
         
         echo json_encode(['success' => true]);
         
     } elseif ($action === 'fetch') {
-        $stmt = $pdo->prepare('SELECT * FROM chat_messages WHERE user_id = :user_id ORDER BY created_at ASC LIMIT 100');
-        $stmt->execute(['user_id' => $tgId]);
+        $stmt = $pdo->prepare('SELECT * FROM chat_messages WHERE user_id = :user_id AND bot_id = :bot_id ORDER BY created_at ASC LIMIT 100');
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
         $rows = $stmt->fetchAll();
         
         // Normalize outputs

@@ -88,7 +88,37 @@ try {
 }
 
 // Global configurations
+$botTokens = [];
+$rawBotTokens = getEnvVar('BOT_TOKENS');
+if ($rawBotTokens) {
+    $tokenPairs = explode(',', $rawBotTokens);
+    foreach ($tokenPairs as $pair) {
+        $pair = trim($pair);
+        if (empty($pair)) continue;
+        if (strpos($pair, ':') !== false) {
+            $parts = explode(':', $pair);
+            $bId = trim($parts[0]);
+            $botTokens[$bId] = $pair;
+        }
+    }
+}
+
 $botToken = getEnvVar('BOT_TOKEN');
+if ($botToken && strpos($botToken, ':') !== false) {
+    $parts = explode(':', $botToken);
+    $bId = trim($parts[0]);
+    if (!isset($botTokens[$bId])) {
+        $botTokens[$bId] = $botToken;
+    }
+}
+
+if (!empty($botTokens)) {
+    reset($botTokens);
+    $primaryBotId = key($botTokens);
+    $botToken = $botTokens[$primaryBotId];
+} else {
+    $primaryBotId = 'default_bot';
+}
 $gopApiKey = getEnvVar('GODOFPANEL_API_KEY');
 $chapaSecretKey = getEnvVar('CHAPA_SECRET_KEY');
 if (!$chapaSecretKey || strpos($chapaSecretKey, 'tEs') !== false || strpos($chapaSecretKey, 'Mg2Kc') !== false) {

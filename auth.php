@@ -5,8 +5,33 @@
 
 require_once __DIR__ . '/config.php';
 
+$currentBotId = null;
+
+function getCurrentBotId() {
+    global $currentBotId, $primaryBotId;
+    if ($currentBotId !== null) {
+        return $currentBotId;
+    }
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    if (isset($_SESSION['bot_id'])) {
+        $currentBotId = $_SESSION['bot_id'];
+        return $currentBotId;
+    }
+    
+    // Check request params/headers as a fallback
+    if (isset($_REQUEST['bot_id'])) {
+        $currentBotId = $_REQUEST['bot_id'];
+        $_SESSION['bot_id'] = $currentBotId;
+        return $currentBotId;
+    }
+    
+    return $primaryBotId;
+}
+
 function getTelegramUser($initData) {
-    global $botToken;
+    global $botTokens, $currentBotId, $primaryBotId;
     
     if (empty($initData) || !is_string($initData)) {
         return null;
@@ -22,7 +47,8 @@ function getTelegramUser($initData) {
 
         if (!$hash) {
             // Development/Local Fallback
-            if (!$botToken) {
+            if (empty($botTokens)) {
+                $currentBotId = $primaryBotId;
                 return $userData;
             }
             return null;
@@ -40,22 +66,29 @@ function getTelegramUser($initData) {
         }
         $dataCheckString = implode("\n", $dataCheckArr);
 
-        if (!$botToken) {
+        if (empty($botTokens)) {
             // Local fallback
+            $currentBotId = $primaryBotId;
             return $userData;
         }
 
-        // HMAC-SHA256 signature check
-        // Secret key is HMAC-SHA256 of the token with key "WebAppData"
-        $secret = hash_hmac('sha256', $botToken, 'WebAppData', true);
-        $calculatedHash = hash_hmac('sha256', $dataCheckString, $secret);
+        // Try validation against all configured bot tokens
+        foreach ($botTokens as $botId => $token) {
+            $secret = hash_hmac('sha256', $token, 'WebAppData', true);
+            $calculatedHash = hash_hmac('sha256', $dataCheckString, $secret);
 
-        if ($hash !== $calculatedHash) {
-            // Invalid signature
-            return null;
+            if ($hash === $calculatedHash) {
+                // Success! Set the matched bot ID
+                $currentBotId = $botId;
+                if (session_status() === PHP_SESSION_NONE) {
+                    session_start();
+                }
+                $_SESSION['bot_id'] = $botId;
+                return $userData;
+            }
         }
 
-        return $userData;
+        return null;
     } catch (Exception $e) {
         return null;
     }
