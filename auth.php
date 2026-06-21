@@ -85,6 +85,9 @@ function getTelegramUser($initData) {
         return null;
     }
 
+    // Force evaluation and caching of currentBotId relative to this request
+    getCurrentBotId();
+
     try {
         parse_str($initData, $params);
         
