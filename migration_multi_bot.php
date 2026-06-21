@@ -43,19 +43,22 @@ try {
     echo "Altering settings...\n";
     $columns = $pdo->query("SHOW COLUMNS FROM settings")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('bot_id', $columns)) {
-        try {
-            $pdo->exec("ALTER TABLE settings DROP PRIMARY KEY");
-            echo "  Dropped settings primary key\n";
-        } catch (Exception $e) {
-            echo "  Error dropping settings primary key: " . $e->getMessage() . "\n";
-        }
-        
         $pdo->exec("ALTER TABLE settings ADD COLUMN bot_id VARCHAR(50) NOT NULL AFTER setting_key");
         $pdo->exec("UPDATE settings SET bot_id = '{$defaultBotId}'");
-        $pdo->exec("ALTER TABLE settings ADD PRIMARY KEY (setting_key, bot_id)");
-        echo "  Added bot_id column and compound primary key to settings table\n";
+        try {
+            $pdo->exec("ALTER TABLE settings DROP PRIMARY KEY, ADD PRIMARY KEY (setting_key, bot_id)");
+            echo "  Added bot_id column and compound primary key to settings table\n";
+        } catch (Exception $e) {
+            echo "  Error updating primary key: " . $e->getMessage() . "\n";
+        }
     } else {
-        echo "  bot_id column already exists in settings table\n";
+        // bot_id exists, check if primary key is compound
+        try {
+            $pdo->exec("ALTER TABLE settings DROP PRIMARY KEY, ADD PRIMARY KEY (setting_key, bot_id)");
+            echo "  Ensured compound primary key on settings table\n";
+        } catch (Exception $e) {
+            echo "  Compound primary key already set or settings modified: " . $e->getMessage() . "\n";
+        }
     }
 
     // 3. Alter other tables
