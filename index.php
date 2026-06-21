@@ -98,7 +98,6 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
 } elseif ($route === '/debug/auth') {
     // Full diagnostic endpoint — shows every HMAC step
     $initRaw = isset($requestData['initData']) ? $requestData['initData'] : '';
-    $tokenLoaded = !empty($botTokens);
     $envToken = getenv('BOT_TOKEN');
 
     // Parse initData
@@ -112,24 +111,15 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
     ksort($params);
     $dcs = implode("\n", array_map(fn($k, $v) => "{$k}={$v}", array_keys($params), $params));
 
-    // Try HMAC against each loaded token
-    $hmacResults = [];
-    foreach ($botTokens as $bid => $tok) {
-        $secret = hash_hmac('sha256', $tok, 'WebAppData', true);
-        $calc   = hash_hmac('sha256', $dcs, $secret);
-        $hmacResults[$bid] = [
-            'token_preview' => substr($tok, 0, 15) . '...',
-            'calculated'    => $calc,
-            'provided'      => $hash,
-            'match'         => $calc === $hash,
-        ];
-    }
+    // Try HMAC validation
+    $secret = hash_hmac('sha256', trim($botToken), 'WebAppData', true);
+    $calc   = hash_hmac('sha256', $dcs, $secret);
+    $match  = $calc === $hash;
 
     echo json_encode([
         'getenv_BOT_TOKEN'   => $envToken ? substr(trim($envToken), 0, 30) . '...' : 'NOT SET',
         'token_trimmed_len'  => $envToken ? strlen(trim($envToken)) : 0,
         'token_raw_len'      => $envToken ? strlen($envToken) : 0,
-        'bot_tokens_count'   => count($botTokens),
         'primary_bot_id'     => $primaryBotId,
         'initData_received'  => !empty($initRaw),
         'initData_length'    => strlen($initRaw),
@@ -137,7 +127,8 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
         'parsed_auth_date'   => $params['auth_date'] ?? null,
         'parsed_user_id'     => $userData['id'] ?? null,
         'dataCheckString'    => $dcs,
-        'hmac_results'       => $hmacResults,
+        'calculated_hash'    => $calc,
+        'hash_match'         => $match,
         'query_string_raw'   => $_SERVER['QUERY_STRING'] ?? '',
     ]);
 } else {
