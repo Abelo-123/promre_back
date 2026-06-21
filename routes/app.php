@@ -156,7 +156,7 @@ if ($route === '/app/alerts/mark-read') {
 // Route: /app/auth (POST)
 if ($route === '/app/auth') {
     $initData = isset($requestData['initData']) ? $requestData['initData'] : '';
-    $userIdFallback = isset($requestData['user_id']) ? $requestData['user_id'] : 'unauth_local_user';
+    $userIdFallback = isset($requestData['user_id']) ? $requestData['user_id'] : '999999999999';
     
     $tgUser = getTelegramUser($initData);
     $tgId = $tgUser && isset($tgUser['id']) ? (string)$tgUser['id'] : null;

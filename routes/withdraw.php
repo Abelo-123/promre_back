@@ -10,7 +10,7 @@ function getWithdrawAuthUserId($requestData) {
     $initData = isset($requestData['initData']) ? $requestData['initData'] : '';
     $tgId = getTelegramUserId($initData);
     if (!$tgId) {
-        $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : 'unauth_local_user';
+        $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : '999999999999';
     }
     return $tgId;
 }

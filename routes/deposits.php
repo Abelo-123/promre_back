@@ -77,7 +77,7 @@ if ($route === '/balance') {
     $initData = isset($requestData['initData']) ? $requestData['initData'] : '';
     $tgId = getTelegramUserId($initData);
     if (!$tgId) {
-        $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : 'unauth_local_user';
+        $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : '999999999999';
     }
     
     try {
@@ -103,7 +103,7 @@ if ($route === '/deposits') {
     
     $tgId = getTelegramUserId($initData);
     if (!$tgId) {
-        $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : 'unauth_local_user';
+        $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : '999999999999';
     }
     
     try {
@@ -155,7 +155,7 @@ if ($route === '/deposit') {
         
         $tgId = getTelegramUserId($initData);
         if (!$tgId) {
-            $tgId = $userId ?: 'unauth_local_user';
+            $tgId = $userId ?: '999999999999';
         }
         
         // Find or create user
@@ -250,7 +250,7 @@ if ($route === '/complete-deposit') {
         
         $tgId = getTelegramUserId($initData);
         if (!$tgId) {
-            $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : 'unauth_local_user';
+            $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : '999999999999';
         }
         
         if (empty($txRef)) {
@@ -383,7 +383,7 @@ if ($route === '/verify-deposit') {
         
         $tgId = getTelegramUserId($initData);
         if (!$tgId) {
-            $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : 'unauth_local_user';
+            $tgId = isset($requestData['user_id']) ? $requestData['user_id'] : '999999999999';
         }
         
         if (empty($txRef)) {
