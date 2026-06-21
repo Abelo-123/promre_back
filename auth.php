@@ -27,6 +27,15 @@ function getCurrentBotId() {
     
     if (!empty($initData) && !empty($botTokens)) {
         parse_str($initData, $params);
+        
+        // Before HMAC check, see if the initData query itself has bot_id (e.g. injected by client)
+        if (isset($params['bot_id'])) {
+            $currentBotId = $params['bot_id'];
+            if (session_status() === PHP_SESSION_NONE) session_start();
+            $_SESSION['bot_id'] = $currentBotId;
+            return $currentBotId;
+        }
+
         $hash = isset($params['hash']) ? $params['hash'] : null;
         if ($hash) {
             unset($params['hash'], $params['signature']);
@@ -51,17 +60,18 @@ function getCurrentBotId() {
         }
     }
     
-    // 2. Fall back to session
+    // 2. Fall back to request parameter
+    if (isset($_REQUEST['bot_id'])) {
+        $currentBotId = $_REQUEST['bot_id'];
+        if (session_status() === PHP_SESSION_NONE) session_start();
+        $_SESSION['bot_id'] = $currentBotId;
+        return $currentBotId;
+    }
+
+    // 3. Fall back to session
     if (session_status() === PHP_SESSION_NONE) session_start();
     if (isset($_SESSION['bot_id'])) {
         $currentBotId = $_SESSION['bot_id'];
-        return $currentBotId;
-    }
-    
-    // 3. Fall back to request parameter
-    if (isset($_REQUEST['bot_id'])) {
-        $currentBotId = $_REQUEST['bot_id'];
-        $_SESSION['bot_id'] = $currentBotId;
         return $currentBotId;
     }
     
@@ -131,7 +141,7 @@ function getTelegramUser($initData) {
 
         if ($signature && $userId && $authDate > 0 && (time() - $authDate) < 86400) {
             error_log('[auth] Soft-auth: HMAC failed but initData is fresh+signed. user=' . $userId);
-            $currentBotId = $primaryBotId;
+            $currentBotId = getCurrentBotId();
             return $userData;
         }
 
