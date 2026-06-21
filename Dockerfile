@@ -3,8 +3,11 @@ FROM php:8.2-apache
 # Install PDO MySQL extension (required for config.php database connection)
 RUN docker-php-ext-install pdo pdo_mysql
 
-# Enable Apache mod_rewrite (required for your .htaccess routing)
-RUN a2enmod rewrite
+# Enable Apache modules
+RUN a2enmod rewrite env
+
+# Enable AllowOverride All so .htaccess rewrite rules are respected
+RUN sed -i 's/AllowOverride None/AllowOverride All/g' /etc/apache2/apache2.conf
 
 # Set the working directory
 WORKDIR /var/www/html

@@ -84,6 +84,20 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
     require_once __DIR__ . '/routes/referral.php';
 } elseif (strpos($route, '/withdraw/') === 0 || $route === '/withdraw') {
     require_once __DIR__ . '/routes/withdraw.php';
+} elseif ($route === '/debug/auth') {
+    // Diagnostic endpoint — remove after debugging
+    $tokenLoaded = !empty($botTokens);
+    $tokenPartial = $tokenLoaded ? substr(array_values($botTokens)[0], 0, 12) . '...' : 'NONE';
+    $initRaw = isset($requestData['initData']) ? $requestData['initData'] : '';
+    $tgUser = getTelegramUser($initRaw);
+    echo json_encode([
+        'bot_tokens_loaded' => $tokenLoaded,
+        'bot_token_preview' => $tokenPartial,
+        'primary_bot_id'    => $primaryBotId,
+        'user_parsed'       => $tgUser ? ['id' => $tgUser['id'], 'first_name' => $tgUser['first_name']] : null,
+        'auth_ok'           => $tgUser !== null,
+        'getenv_BOT_TOKEN'  => getenv('BOT_TOKEN') ? substr(getenv('BOT_TOKEN'), 0, 12) . '...' : 'NOT SET',
+    ]);
 } else {
     http_response_code(404);
     echo json_encode(['error' => 'Endpoint not found', 'route' => $route]);
