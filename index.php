@@ -22,7 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '*';
 header("Access-Control-Allow-Origin: $origin");
 header("Access-Control-Allow-Credentials: true");
-header("Content-Type: application/json; charset=UTF-8");
+// NOTE: Content-Type is NOT set globally here — SSE routes set text/event-stream themselves.
+// JSON routes will set their own Content-Type or rely on the default.
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
@@ -54,6 +55,12 @@ $requestData = array_merge($_GET, $_POST, $requestData);
 // file_put_contents(__DIR__ . '/debug.log', "[" . date('Y-m-d H:i:s') . "] Route: $route, Method: " . $_SERVER['REQUEST_METHOD'] . "\n", FILE_APPEND);
 
 // Route mapping to controller files
+// Set JSON content type for all routes EXCEPT SSE stream
+$isSseRoute = ($route === '/orders/stream');
+if (!$isSseRoute) {
+    header("Content-Type: application/json; charset=UTF-8");
+}
+
 if (strpos($route, '/app/') === 0 || $route === '/app') {
     require_once __DIR__ . '/routes/app.php';
 } elseif ($route === '/services' || $route === '/categories' || strpos($route, '/services/') === 0) {
