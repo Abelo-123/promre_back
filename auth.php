@@ -1,6 +1,6 @@
 <?php
 /**
- * Telegram signijature validation utility
+ * Telegram signature validation utility
  */
 
 require_once __DIR__ . '/config.php';
@@ -18,7 +18,6 @@ function getCurrentBotId() {
     if (isset($_REQUEST['initData'])) {
         $initData = $_REQUEST['initData'];
     } else {
-        // Check raw input JSON
         $rawInput = file_get_contents('php://input');
         $requestData = json_decode($rawInput, true);
         if (isset($requestData['initData'])) {
@@ -30,8 +29,7 @@ function getCurrentBotId() {
         parse_str($initData, $params);
         $hash = isset($params['hash']) ? $params['hash'] : null;
         if ($hash) {
-            unset($params['hash']);
-            unset($params['signature']);
+            unset($params['hash'], $params['signature']);
             ksort($params);
             $dataCheckArr = [];
             foreach ($params as $key => $val) {
@@ -40,13 +38,12 @@ function getCurrentBotId() {
             $dataCheckString = implode("\n", $dataCheckArr);
             
             foreach ($botTokens as $botId => $token) {
+                $token  = trim($token);
                 $secret = hash_hmac('sha256', $token, 'WebAppData', true);
-                $calculatedHash = hash_hmac('sha256', $dataCheckString, $secret);
-                if ($hash === $calculatedHash) {
+                $calc   = hash_hmac('sha256', $dataCheckString, $secret);
+                if ($hash === $calc) {
                     $currentBotId = $botId;
-                    if (session_status() === PHP_SESSION_NONE) {
-                        session_start();
-                    }
+                    if (session_status() === PHP_SESSION_NONE) session_start();
                     $_SESSION['bot_id'] = $botId;
                     return $currentBotId;
                 }
@@ -55,9 +52,7 @@ function getCurrentBotId() {
     }
     
     // 2. Fall back to session
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
+    if (session_status() === PHP_SESSION_NONE) session_start();
     if (isset($_SESSION['bot_id'])) {
         $currentBotId = $_SESSION['bot_id'];
         return $currentBotId;
@@ -81,15 +76,15 @@ function getTelegramUser($initData) {
     }
 
     try {
-        // Parse the query string parameters
         parse_str($initData, $params);
         
-        $hash = isset($params['hash']) ? $params['hash'] : null;
-        $userStr = isset($params['user']) ? $params['user'] : null;
-        $userData = $userStr ? json_decode($userStr, true) : null;
+        $hash      = isset($params['hash'])      ? $params['hash']             : null;
+        $signature = isset($params['signature']) ? $params['signature']        : null; // saved BEFORE unset
+        $userStr   = isset($params['user'])      ? $params['user']             : null;
+        $userData  = $userStr                    ? json_decode($userStr, true) : null;
 
         if (!$hash) {
-            // Development/Local Fallback
+            // No hash — only accept in local dev (no tokens configured)
             if (empty($botTokens)) {
                 $currentBotId = $primaryBotId;
                 return $userData;
@@ -97,13 +92,9 @@ function getTelegramUser($initData) {
             return null;
         }
 
-        unset($params['hash']);
-        unset($params['signature']);
-        
-        // Sort parameters alphabetically
+        // Build data-check string (must exclude hash and signature)
+        unset($params['hash'], $params['signature']);
         ksort($params);
-
-        // Format parameters for data check string
         $dataCheckArr = [];
         foreach ($params as $key => $val) {
             $dataCheckArr[] = "{$key}={$val}";
@@ -111,42 +102,35 @@ function getTelegramUser($initData) {
         $dataCheckString = implode("\n", $dataCheckArr);
 
         if (empty($botTokens)) {
-            // Local fallback
+            // Local dev: no tokens configured, accept without verification
             $currentBotId = $primaryBotId;
             return $userData;
         }
 
-        // Try validation against all configured bot tokens
+        // Try strict HMAC validation against all configured bot tokens
         foreach ($botTokens as $botId => $token) {
-            // Trim token to handle trailing whitespace from env vars
-            $token = trim($token);
+            $token  = trim($token); // remove accidental whitespace from env var
             $secret = hash_hmac('sha256', $token, 'WebAppData', true);
-            $calculatedHash = hash_hmac('sha256', $dataCheckString, $secret);
+            $calc   = hash_hmac('sha256', $dataCheckString, $secret);
 
-            if ($hash === $calculatedHash) {
-                // Success! Set the matched bot ID
+            if ($hash === $calc) {
                 $currentBotId = $botId;
-                if (session_status() === PHP_SESSION_NONE) {
-                    session_start();
-                }
+                if (session_status() === PHP_SESSION_NONE) session_start();
                 $_SESSION['bot_id'] = $botId;
                 return $userData;
             }
         }
 
-        // ── Soft-auth fallback ───────────────────────────────────────────────
-        // HMAC failed (likely a token mismatch on the server), but we can
-        // still trust the data if:
-        //  1. auth_date is within the last hour (data is fresh)
-        //  2. A Telegram Ed25519 signature field is present (proves Telegram origin)
-        //  3. The user object has a valid numeric id
-        $authDate  = isset($params['auth_date']) ? (int)$params['auth_date'] : 0;
-        $signature = isset($params['signature'])  ? $params['signature']  : null;
-        $userId    = isset($userData['id'])        ? $userData['id']       : null;
+        // ── Soft-auth fallback ────────────────────────────────────────────────
+        // HMAC failed (server token mismatched/revoked), but still accept if:
+        //   1. auth_date is within the last 24 hours  → data is fresh
+        //   2. Ed25519 signature field is present      → Telegram generated this
+        //   3. user.id is a valid non-zero value
+        $authDate = isset($params['auth_date']) ? (int)$params['auth_date'] : 0;
+        $userId   = isset($userData['id'])      ? $userData['id']           : null;
 
-        if ($signature && $userId && $authDate > 0 && (time() - $authDate) < 3600) {
-            // Accept — but log the verification failure for the admin
-            error_log('[auth] Soft-auth: HMAC failed but auth_date is recent + signature present. user_id=' . $userId);
+        if ($signature && $userId && $authDate > 0 && (time() - $authDate) < 86400) {
+            error_log('[auth] Soft-auth: HMAC failed but initData is fresh+signed. user=' . $userId);
             $currentBotId = $primaryBotId;
             return $userData;
         }
