@@ -48,6 +48,17 @@ $route = '/' . trim($route, '/');
 $rawInput = file_get_contents('php://input');
 $requestData = json_decode($rawInput, true) ?: [];
 
+// For GET requests: also try reading initData directly from raw QUERY_STRING
+// to avoid any double-decoding issues from mod_rewrite
+if (empty($requestData['initData']) && !empty($_SERVER['QUERY_STRING'])) {
+    // Parse raw query string manually
+    $rawQs = $_SERVER['QUERY_STRING'];
+    parse_str($rawQs, $rawQsParams);
+    if (!empty($rawQsParams['initData'])) {
+        $requestData['initData'] = $rawQsParams['initData'];
+    }
+}
+
 // Merge query parameters for easier retrieval
 $requestData = array_merge($_GET, $_POST, $requestData);
 
@@ -85,18 +96,47 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
 } elseif (strpos($route, '/withdraw/') === 0 || $route === '/withdraw') {
     require_once __DIR__ . '/routes/withdraw.php';
 } elseif ($route === '/debug/auth') {
-    // Diagnostic endpoint — remove after debugging
-    $tokenLoaded = !empty($botTokens);
-    $tokenPartial = $tokenLoaded ? substr(array_values($botTokens)[0], 0, 12) . '...' : 'NONE';
+    // Full diagnostic endpoint — shows every HMAC step
     $initRaw = isset($requestData['initData']) ? $requestData['initData'] : '';
-    $tgUser = getTelegramUser($initRaw);
+    $tokenLoaded = !empty($botTokens);
+    $envToken = getenv('BOT_TOKEN');
+
+    // Parse initData
+    $params = [];
+    if ($initRaw) parse_str($initRaw, $params);
+    $hash = isset($params['hash']) ? $params['hash'] : null;
+    $userData = isset($params['user']) ? json_decode($params['user'], true) : null;
+
+    // Build dataCheckString
+    unset($params['hash'], $params['signature']);
+    ksort($params);
+    $dcs = implode("\n", array_map(fn($k, $v) => "{$k}={$v}", array_keys($params), $params));
+
+    // Try HMAC against each loaded token
+    $hmacResults = [];
+    foreach ($botTokens as $bid => $tok) {
+        $secret = hash_hmac('sha256', $tok, 'WebAppData', true);
+        $calc   = hash_hmac('sha256', $dcs, $secret);
+        $hmacResults[$bid] = [
+            'token_preview' => substr($tok, 0, 15) . '...',
+            'calculated'    => $calc,
+            'provided'      => $hash,
+            'match'         => $calc === $hash,
+        ];
+    }
+
     echo json_encode([
-        'bot_tokens_loaded' => $tokenLoaded,
-        'bot_token_preview' => $tokenPartial,
-        'primary_bot_id'    => $primaryBotId,
-        'user_parsed'       => $tgUser ? ['id' => $tgUser['id'], 'first_name' => $tgUser['first_name']] : null,
-        'auth_ok'           => $tgUser !== null,
-        'getenv_BOT_TOKEN'  => getenv('BOT_TOKEN') ? substr(getenv('BOT_TOKEN'), 0, 12) . '...' : 'NOT SET',
+        'getenv_BOT_TOKEN'   => $envToken ? substr($envToken, 0, 15) . '...' : 'NOT SET',
+        'bot_tokens_count'   => count($botTokens),
+        'primary_bot_id'     => $primaryBotId,
+        'initData_received'  => !empty($initRaw),
+        'initData_length'    => strlen($initRaw),
+        'parsed_hash'        => $hash,
+        'parsed_auth_date'   => $params['auth_date'] ?? null,
+        'parsed_user_id'     => $userData['id'] ?? null,
+        'dataCheckString'    => $dcs,
+        'hmac_results'       => $hmacResults,
+        'query_string_raw'   => $_SERVER['QUERY_STRING'] ?? '',
     ]);
 } else {
     http_response_code(404);
