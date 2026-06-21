@@ -31,6 +31,7 @@ function getCurrentBotId() {
         $hash = isset($params['hash']) ? $params['hash'] : null;
         if ($hash) {
             unset($params['hash']);
+            unset($params['signature']);
             ksort($params);
             $dataCheckArr = [];
             foreach ($params as $key => $val) {
@@ -97,6 +98,7 @@ function getTelegramUser($initData) {
         }
 
         unset($params['hash']);
+        unset($params['signature']);
         
         // Sort parameters alphabetically
         ksort($params);
