@@ -20,21 +20,29 @@ echo "Default Bot ID set to: {$defaultBotId}\n";
 try {
     // 1. Alter auth table
     echo "Altering auth table...\n";
-    // Check if bot_id already exists
+    
+    // Always attempt to drop the old unique key on tg_id if it exists
+    try {
+        $pdo->exec("ALTER TABLE auth DROP INDEX tg_id");
+        echo "  Dropped old singular unique key tg_id\n";
+    } catch (Exception $e) {
+        echo "  No separate tg_id index found or already dropped: " . $e->getMessage() . "\n";
+    }
+
+    // Always attempt to add the composite unique key (tg_id, bot_id) if it doesn't exist
+    try {
+        $pdo->exec("ALTER TABLE auth ADD UNIQUE KEY tg_id_bot_id (tg_id, bot_id)");
+        echo "  Added composite unique key tg_id_bot_id (tg_id, bot_id)\n";
+    } catch (Exception $e) {
+        echo "  Composite unique key tg_id_bot_id already exists: " . $e->getMessage() . "\n";
+    }
+
+    // Check if bot_id already exists to add the column
     $columns = $pdo->query("SHOW COLUMNS FROM auth")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('bot_id', $columns)) {
-        // Drop unique key on tg_id first if it exists
-        try {
-            $pdo->exec("ALTER TABLE auth DROP INDEX tg_id");
-            echo "  Dropped unique key tg_id\n";
-        } catch (Exception $e) {
-            echo "  No separate tg_id index found or error dropping: " . $e->getMessage() . "\n";
-        }
-        
         $pdo->exec("ALTER TABLE auth ADD COLUMN bot_id VARCHAR(50) DEFAULT NULL AFTER tg_id");
         $pdo->exec("UPDATE auth SET bot_id = '{$defaultBotId}' WHERE bot_id IS NULL");
-        $pdo->exec("ALTER TABLE auth ADD UNIQUE KEY tg_id_bot_id (tg_id, bot_id)");
-        echo "  Added bot_id column and unique key (tg_id, bot_id) to auth table\n";
+        echo "  Added bot_id column to auth table\n";
     } else {
         echo "  bot_id column already exists in auth table\n";
     }
