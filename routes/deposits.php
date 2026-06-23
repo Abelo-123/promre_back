@@ -33,6 +33,9 @@ function chapaInitializePayment($data) {
         'customization' => [
             'title'       => 'Paxyo Deposit',
             'description' => 'Wallet deposit'
+        ],
+        'meta'          => [
+            'hide_receipt' => true
         ]
     ];
     
