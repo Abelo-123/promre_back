@@ -21,22 +21,6 @@ try {
     // 1. Alter auth table
     echo "Altering auth table...\n";
     
-    // Always attempt to drop the old unique key on tg_id if it exists
-    try {
-        $pdo->exec("ALTER TABLE auth DROP INDEX tg_id");
-        echo "  Dropped old singular unique key tg_id\n";
-    } catch (Exception $e) {
-        echo "  No separate tg_id index found or already dropped: " . $e->getMessage() . "\n";
-    }
-
-    // Always attempt to add the composite unique key (tg_id, bot_id) if it doesn't exist
-    try {
-        $pdo->exec("ALTER TABLE auth ADD UNIQUE KEY tg_id_bot_id (tg_id, bot_id)");
-        echo "  Added composite unique key tg_id_bot_id (tg_id, bot_id)\n";
-    } catch (Exception $e) {
-        echo "  Composite unique key tg_id_bot_id already exists: " . $e->getMessage() . "\n";
-    }
-
     // Check if bot_id already exists to add the column
     $columns = $pdo->query("SHOW COLUMNS FROM auth")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('bot_id', $columns)) {
@@ -45,6 +29,21 @@ try {
         echo "  Added bot_id column to auth table\n";
     } else {
         echo "  bot_id column already exists in auth table\n";
+    }
+
+    // Drop the old singular PRIMARY KEY (tg_id) and make (tg_id, bot_id) the compound PRIMARY KEY
+    try {
+        // Drop unique key tg_id_bot_id if it exists to avoid redundancy (since primary key will cover it)
+        try {
+            $pdo->exec("ALTER TABLE auth DROP INDEX tg_id_bot_id");
+            echo "  Dropped redundant unique index tg_id_bot_id\n";
+        } catch (Exception $e) {}
+
+        // Drop the primary key constraint on tg_id and make (tg_id, bot_id) the primary key
+        $pdo->exec("ALTER TABLE auth DROP PRIMARY KEY, ADD PRIMARY KEY (tg_id, bot_id)");
+        echo "  Successfully updated PRIMARY KEY to compound (tg_id, bot_id)\n";
+    } catch (Exception $e) {
+        echo "  Note/Error updating primary key: " . $e->getMessage() . "\n";
     }
 
     // 2. Alter settings table
