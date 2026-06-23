@@ -53,6 +53,11 @@ try {
             echo "  Dropped foreign key user_alerts_ibfk_1\n";
         } catch (Exception $e) {}
 
+        // Ensure there are no NULL values in bot_id and make it NOT NULL
+        $pdo->exec("UPDATE auth SET bot_id = '{$defaultBotId}' WHERE bot_id IS NULL OR bot_id = ''");
+        $pdo->exec("ALTER TABLE auth MODIFY COLUMN bot_id VARCHAR(50) NOT NULL");
+        echo "  Updated NULL bot_ids and set bot_id column to NOT NULL\n";
+
         // Drop the primary key constraint on tg_id and make (tg_id, bot_id) the primary key
         $pdo->exec("ALTER TABLE auth DROP PRIMARY KEY, ADD PRIMARY KEY (tg_id, bot_id)");
         echo "  Successfully updated PRIMARY KEY to compound (tg_id, bot_id)\n";
