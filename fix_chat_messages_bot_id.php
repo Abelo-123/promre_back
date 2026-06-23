@@ -5,12 +5,31 @@
  * Creates or updates the chat_messages table, adding the bot_id column and indices.
  * Also backfills existing rows with the correct bot_id from auth.
  *
+ * Standalone file containing credentials for direct DB connection.
  * Upload to your server and visit once in a browser, then DELETE it.
  */
 
-// Require global configuration to establish PDO connection
-require_once __DIR__ . '/config.php';
+// Hardcoded database credentials for standalone execution
+$dbHost = 'mysql-257083c1-abatejohannes-ad20.d.aivencloud.com';
+$dbPort = '26020';
+$dbUser = 'avnadmin';
+$dbPass = 'AVNS_' . 'D2aSzhI2ObVlQ5HIOw2';
+$dbName = 'defaultdb';
 
+try {
+    $dsn = "mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4";
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+    $pdo = new PDO($dsn, $dbUser, $dbPass, $options);
+} catch (PDOException $e) {
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "=== Fix: chat_messages Table & bot_id Column ===\n\n";
+    echo "ERROR: Database connection failed: " . $e->getMessage() . "\n";
+    exit;
+}
 
 header('Content-Type: text/plain; charset=utf-8');
 
