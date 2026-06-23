@@ -3,18 +3,14 @@ require_once __DIR__ . '/config.php';
 header('Content-Type: text/plain');
 
 try {
-    $stmt = $pdo->query("
-        SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
-        FROM information_schema.KEY_COLUMN_USAGE 
-        WHERE REFERENCED_TABLE_NAME = 'auth'
-    ");
-    $fks = $stmt->fetchAll();
-    echo "--- FOREIGN KEYS REFERENCING auth ---\n\n";
-    if (empty($fks)) {
-        echo "No foreign keys found referencing 'auth'.\n";
+    $stmt = $pdo->query("SELECT tg_id, bot_id FROM auth WHERE bot_id IS NULL OR bot_id = ''");
+    $rows = $stmt->fetchAll();
+    echo "--- ROWS WITH NULL OR EMPTY bot_id ---\n\n";
+    if (empty($rows)) {
+        echo "No rows found with NULL or empty bot_id.\n";
     } else {
-        foreach ($fks as $fk) {
-            echo "Table: " . $fk['TABLE_NAME'] . " | Column: " . $fk['COLUMN_NAME'] . " | Constraint: " . $fk['CONSTRAINT_NAME'] . " | References: " . $fk['REFERENCED_TABLE_NAME'] . "(" . $fk['REFERENCED_COLUMN_NAME'] . ")\n";
+        foreach ($rows as $row) {
+            echo "tg_id: " . $row['tg_id'] . " | bot_id: " . (is_null($row['bot_id']) ? 'NULL' : '"' . $row['bot_id'] . '"') . "\n";
         }
     }
 } catch (Exception $e) {
