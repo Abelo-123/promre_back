@@ -3,16 +3,19 @@ require_once __DIR__ . '/config.php';
 header('Content-Type: text/plain');
 
 try {
-    $stmt = $pdo->query('SHOW CREATE TABLE auth');
-    $row = $stmt->fetch();
-    echo "--- TABLE STRUCTURE FOR auth ---\n\n";
-    echo $row['Create Table'] . "\n\n";
-    
-    $stmt = $pdo->query('SHOW INDEX FROM auth');
-    $indexes = $stmt->fetchAll();
-    echo "--- INDEXES ---\n\n";
-    foreach ($indexes as $index) {
-        echo "Table: " . $index['Table'] . " | Unique: " . ($index['Non_unique'] ? 'No' : 'Yes') . " | Key Name: " . $index['Key_name'] . " | Column: " . $index['Column_name'] . "\n";
+    $stmt = $pdo->query("
+        SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+        FROM information_schema.KEY_COLUMN_USAGE 
+        WHERE REFERENCED_TABLE_NAME = 'auth'
+    ");
+    $fks = $stmt->fetchAll();
+    echo "--- FOREIGN KEYS REFERENCING auth ---\n\n";
+    if (empty($fks)) {
+        echo "No foreign keys found referencing 'auth'.\n";
+    } else {
+        foreach ($fks as $fk) {
+            echo "Table: " . $fk['TABLE_NAME'] . " | Column: " . $fk['COLUMN_NAME'] . " | Constraint: " . $fk['CONSTRAINT_NAME'] . " | References: " . $fk['REFERENCED_TABLE_NAME'] . "(" . $fk['REFERENCED_COLUMN_NAME'] . ")\n";
+        }
     }
 } catch (Exception $e) {
     echo "Error: " . $e->getMessage() . "\n";
