@@ -39,6 +39,20 @@ try {
             echo "  Dropped redundant unique index tg_id_bot_id\n";
         } catch (Exception $e) {}
 
+        // Drop the foreign key constraints that reference auth(tg_id)
+        try {
+            $pdo->exec("ALTER TABLE deposits DROP FOREIGN KEY deposits_ibfk_1");
+            echo "  Dropped foreign key deposits_ibfk_1\n";
+        } catch (Exception $e) {}
+        try {
+            $pdo->exec("ALTER TABLE orders DROP FOREIGN KEY orders_ibfk_1");
+            echo "  Dropped foreign key orders_ibfk_1\n";
+        } catch (Exception $e) {}
+        try {
+            $pdo->exec("ALTER TABLE user_alerts DROP FOREIGN KEY user_alerts_ibfk_1");
+            echo "  Dropped foreign key user_alerts_ibfk_1\n";
+        } catch (Exception $e) {}
+
         // Drop the primary key constraint on tg_id and make (tg_id, bot_id) the primary key
         $pdo->exec("ALTER TABLE auth DROP PRIMARY KEY, ADD PRIMARY KEY (tg_id, bot_id)");
         echo "  Successfully updated PRIMARY KEY to compound (tg_id, bot_id)\n";
