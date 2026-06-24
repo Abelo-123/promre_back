@@ -5,13 +5,30 @@
 
 require_once __DIR__ . '/config.php';
 
-function getCurrentBotId() {
+function getCurrentBotId($requestBotId = null) {
     global $primaryBotId;
+    if ($requestBotId) {
+        return $requestBotId;
+    }
+    
+    global $requestData;
+    if (isset($requestData['bot_id']) && !empty($requestData['bot_id'])) {
+        return $requestData['bot_id'];
+    }
+    
+    if (isset($_GET['bot_id']) && !empty($_GET['bot_id'])) {
+        return $_GET['bot_id'];
+    }
+    
+    if (isset($_SERVER['HTTP_X_BOT_ID']) && !empty($_SERVER['HTTP_X_BOT_ID'])) {
+        return $_SERVER['HTTP_X_BOT_ID'];
+    }
+    
     return $primaryBotId;
 }
 
 function getTelegramUser($initData) {
-    global $botToken, $primaryBotId;
+    global $botTokens, $botToken, $primaryBotId;
     
     if (empty($initData) || !is_string($initData)) {
         return null;
@@ -39,11 +56,18 @@ function getTelegramUser($initData) {
         }
         $dataCheckString = implode("\n", $dataCheckArr);
 
-        // Strict HMAC validation
-        $secret = hash_hmac('sha256', trim($botToken), 'WebAppData', true);
-        $calc   = hash_hmac('sha256', $dataCheckString, $secret);
+        // Verify signature against all configured bot tokens
+        $isValid = false;
+        foreach ($botTokens as $botId => $token) {
+            $secret = hash_hmac('sha256', trim($token), 'WebAppData', true);
+            $calc   = hash_hmac('sha256', $dataCheckString, $secret);
+            if ($hash === $calc) {
+                $isValid = true;
+                break;
+            }
+        }
 
-        if ($hash === $calc) {
+        if ($isValid) {
             return $userData;
         }
 

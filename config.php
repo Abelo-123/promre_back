@@ -88,13 +88,34 @@ try {
 }
 
 // Global configurations
+$botTokens = [];
+$rawTokens = getEnvVar('BOT_TOKENS');
+if ($rawTokens) {
+    $pairs = explode(',', $rawTokens);
+    foreach ($pairs as $pair) {
+        $trimmed = trim($pair);
+        if (empty($trimmed)) continue;
+        if (strpos($trimmed, ':') !== false) {
+            $parts = explode(':', $trimmed);
+            $botId = trim($parts[0]);
+            $botTokens[$botId] = $trimmed;
+        }
+    }
+}
+
 $botToken = getEnvVar('BOT_TOKEN');
 if ($botToken && strpos($botToken, ':') !== false) {
     $parts = explode(':', $botToken);
     $primaryBotId = trim($parts[0]);
+    if (!isset($botTokens[$primaryBotId])) {
+        $botTokens[$primaryBotId] = $botToken;
+    }
 } else {
     $primaryBotId = '8958935808';
     $botToken = '8958935808:AAHIKPlmSFX5YhSMvIQuTUba9QC6QUes5xk';
+    if (!isset($botTokens[$primaryBotId])) {
+        $botTokens[$primaryBotId] = $botToken;
+    }
 }
 
 $gopApiKey = getEnvVar('GODOFPANEL_API_KEY');
