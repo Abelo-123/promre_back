@@ -30,6 +30,9 @@ function chapaInitializePayment($data) {
         'tx_ref'        => $data['tx_ref'],
         'callback_url'  => $callbackUrl,
         'return_url'    => $returnUrl,
+        'meta'          => [
+            'hide_receipt' => true
+        ],
         'customization' => [
             'title'       => 'Paxyo Deposit',
             'description' => 'Wallet deposit'
