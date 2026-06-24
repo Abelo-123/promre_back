@@ -59,8 +59,44 @@ if (empty($requestData['initData']) && !empty($_SERVER['QUERY_STRING'])) {
     }
 }
 
+$requestStartTime = microtime(true);
+
 // Merge query parameters for easier retrieval
 $requestData = array_merge($_GET, $_POST, $requestData);
+
+// Register global logging shutdown function
+register_shutdown_function(function() use ($requestStartTime, &$route, &$requestData) {
+    $duration = round((microtime(true) - $requestStartTime) * 1000, 2);
+    $timestamp = date('Y-m-d H:i:s');
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $status = http_response_code();
+    
+    $userId = 'unauthenticated';
+    if (!empty($requestData['initData'])) {
+        parse_str($requestData['initData'], $params);
+        if (!empty($params['user'])) {
+            $userData = json_decode($params['user'], true);
+            if (!empty($userData['id'])) {
+                $userId = $userData['id'];
+            }
+        }
+    }
+    if ($userId === 'unauthenticated' && !empty($requestData['user_id'])) {
+        $userId = $requestData['user_id'];
+    }
+    if ($userId === 'unauthenticated' && !empty($requestData['tg_id'])) {
+        $userId = $requestData['tg_id'];
+    }
+    
+    $summary = '';
+    if ($method !== 'GET') {
+        $logData = $requestData;
+        unset($logData['initData']);
+        $summary = substr(json_encode($logData), 0, 100);
+    }
+    
+    error_log("[{$timestamp}] {$method} {$route} | User: {$userId} | Status: {$status} | Duration: {$duration}ms | Payload: {$summary}");
+});
 
 // Basic logger / debug
 // file_put_contents(__DIR__ . '/debug.log', "[" . date('Y-m-d H:i:s') . "] Route: $route, Method: " . $_SERVER['REQUEST_METHOD'] . "\n", FILE_APPEND);
