@@ -9,13 +9,15 @@ function sendNotification($type, $params) {
     $paxyoBotUrl = 'https://abiybot34.onrender.com/api/sendToJohn';
     $payload = array_merge(['type' => $type], $params);
     
+    error_log("[DEBUG Notification] Preparing notification webhook payload: " . json_encode($payload));
+    
     // Fire-and-forget notification with 5s timeout
     $res = curlRequest('POST', $paxyoBotUrl, ['Content-Type: application/json'], json_encode($payload), 5);
     
     if ($res['code'] !== 200) {
-        error_log("[Notification Failed] Target: {$paxyoBotUrl} | Type: {$type} | Code: {$res['code']} | Error: {$res['error']} | Response: " . substr($res['body'], 0, 200));
+        error_log("[DEBUG Notification ERROR] Webhook failed. Code: {$res['code']} | Error: {$res['error']} | Response: " . substr($res['body'], 0, 200));
     } else {
-        error_log("[Notification Sent] Target: {$paxyoBotUrl} | Type: {$type} | Response: " . substr($res['body'], 0, 200));
+        error_log("[DEBUG Notification SUCCESS] Webhook sent successfully. Response: " . substr($res['body'], 0, 200));
     }
     
     return ['success' => true];
