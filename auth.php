@@ -11,6 +11,13 @@ function getCurrentBotId($requestBotId = null) {
         return $requestBotId;
     }
     
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    if (isset($_SESSION['bot_id']) && !empty($_SESSION['bot_id'])) {
+        return $_SESSION['bot_id'];
+    }
+    
     global $requestData;
     if (isset($requestData['bot_id']) && !empty($requestData['bot_id'])) {
         return $requestData['bot_id'];
@@ -63,6 +70,10 @@ function getTelegramUser($initData) {
             $calc   = hash_hmac('sha256', $dataCheckString, $secret);
             if ($hash === $calc) {
                 $isValid = true;
+                if (session_status() === PHP_SESSION_NONE) {
+                    @session_start();
+                }
+                $_SESSION['bot_id'] = $botId;
                 break;
             }
         }
