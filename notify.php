@@ -12,6 +12,12 @@ function sendNotification($type, $params) {
     // Fire-and-forget notification with 5s timeout
     $res = curlRequest('POST', $paxyoBotUrl, ['Content-Type: application/json'], json_encode($payload), 5);
     
+    if ($res['code'] !== 200) {
+        error_log("[Notification Failed] Target: {$paxyoBotUrl} | Type: {$type} | Code: {$res['code']} | Error: {$res['error']} | Response: " . substr($res['body'], 0, 200));
+    } else {
+        error_log("[Notification Sent] Target: {$paxyoBotUrl} | Type: {$type} | Response: " . substr($res['body'], 0, 200));
+    }
+    
     return ['success' => true];
 }
 
