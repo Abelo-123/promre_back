@@ -260,6 +260,51 @@ if ($route === '/app/auth') {
             if (!is_array($refers)) $refers = [];
         }
         
+        // Debugging info
+        $debugInfo = [
+            'input_user_id' => $tgId,
+            'resolved_bot_id' => $botId,
+            'db_user_found' => !empty($user),
+            'db_user_balance' => !empty($user) ? (float)$user['balance'] : null,
+            'is_telegram_payload' => !empty($tgUser),
+            'raw_first_name' => $firstName,
+            'raw_username' => $username,
+        ];
+
+        // Fetch GodOfPanel (upstream provider) balance for debugging if API key exists
+        if (!empty($gopApiKey)) {
+            try {
+                $gopRes = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+                    'key' => $gopApiKey,
+                    'action' => 'balance'
+                ], 10);
+                $gopData = json_decode($gopRes['body'], true);
+                if ($gopData && isset($gopData['balance'])) {
+                    $debugInfo['upstream_provider'] = [
+                        'name' => 'GodOfPanel',
+                        'balance' => $gopData['balance'],
+                        'currency' => isset($gopData['currency']) ? $gopData['currency'] : 'USD'
+                    ];
+                } else {
+                    $debugInfo['upstream_provider'] = [
+                        'name' => 'GodOfPanel',
+                        'error' => isset($gopData['error']) ? $gopData['error'] : 'Invalid response format',
+                        'raw_response' => substr($gopRes['body'], 0, 500)
+                    ];
+                }
+            } catch (Exception $e) {
+                $debugInfo['upstream_provider'] = [
+                    'name' => 'GodOfPanel',
+                    'error' => $e->getMessage()
+                ];
+            }
+        } else {
+            $debugInfo['upstream_provider'] = [
+                'name' => 'GodOfPanel',
+                'error' => 'API Key is empty or missing'
+            ];
+        }
+        
         echo json_encode([
             'success' => true,
             'user' => [
@@ -277,7 +322,8 @@ if ($route === '/app/auth') {
                 'referral_code'  => $user['referral_code'],
                 'referred_by'    => isset($user['referred_by']) ? $user['referred_by'] : null,
                 'refers'         => $refers
-            ]
+            ],
+            'debug' => $debugInfo
         ]);
         
     } catch (Exception $e) {

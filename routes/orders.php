@@ -223,7 +223,10 @@ if ($route === '/orders/place') {
 
         if ((float)$user['balance'] < $totalCostEtb) {
             $pdo->rollBack();
-            echo json_encode(['success' => false, 'error' => 'Insufficient wallet balance']);
+            echo json_encode([
+                'success' => false,
+                'error' => "Insufficient wallet balance. You have " . number_format((float)$user['balance'], 2) . " ETB, but this order costs " . number_format($totalCostEtb, 2) . " ETB."
+            ]);
             exit;
         }
 
@@ -243,7 +246,14 @@ if ($route === '/orders/place') {
 
         if (!$orderData || isset($orderData['error'])) {
             $pdo->rollBack();
-            echo json_encode(['success' => false, 'error' => isset($orderData['error']) ? $orderData['error'] : 'Upstream panel placing order failed']);
+            $providerErr = isset($orderData['error']) ? $orderData['error'] : 'Upstream panel placing order failed';
+            
+            // Intercept balance-related upstream errors to clarify that the BOT OWNER needs to top up GodOfPanel
+            if (stripos($providerErr, 'funds') !== false || stripos($providerErr, 'balance') !== false) {
+                $providerErr = "Provider Error: {$providerErr}. (Admin: Please deposit funds to your GodOfPanel account)";
+            }
+            
+            echo json_encode(['success' => false, 'error' => $providerErr]);
             exit;
         }
 
