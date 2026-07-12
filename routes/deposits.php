@@ -39,6 +39,9 @@ function chapaInitializePayment($data) {
         ]
     ];
     
+    // Log payload for debugging
+    file_put_contents(__DIR__ . '/../chapa_payload.log', "[" . date('Y-m-d H:i:s') . "] URL: {$chapaBaseUrl}/transaction/initialize\nPayload: " . json_encode($payload, JSON_PRETTY_PRINT) . "\n\n", FILE_APPEND);
+
     $res = curlRequest('POST', "{$chapaBaseUrl}/transaction/initialize", [
         "Authorization: Bearer {$chapaSecretKey}",
         "Content-Type: application/json"
