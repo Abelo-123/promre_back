@@ -28,7 +28,7 @@ $payload = [
         'hide_receipt' => true
     ],
     'customization' => [
-        'title'       => 'Paxyo Test Payment',
+        'title'       => 'Paxyo Test',
         'description' => 'Diagnosing Chapa Checkout Integration'
     ]
 ];
