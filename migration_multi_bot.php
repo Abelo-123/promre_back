@@ -31,6 +31,11 @@ try {
         echo "  bot_id column already exists in auth table\n";
     }
 
+    if (!in_array('photo_url', $columns)) {
+        $pdo->exec("ALTER TABLE auth ADD COLUMN photo_url TEXT DEFAULT NULL AFTER username");
+        echo "  Added photo_url column to auth table\n";
+    }
+
     // Drop the old singular PRIMARY KEY (tg_id) and make (tg_id, bot_id) the compound PRIMARY KEY
     // Drop unique key tg_id_bot_id if it exists to avoid redundancy (since primary key will cover it)
     try {
