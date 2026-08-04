@@ -197,8 +197,8 @@ if ($route === '/deposit') {
             }
             
             // Create pending deposit
-            $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending', :reference_id)");
-            $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $txRef, 'reference_id' => $txRef]);
+            $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending')");
+            $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $txRef]);
             $depositId = $pdo->lastInsertId();
             
             echo json_encode([
@@ -212,8 +212,8 @@ if ($route === '/deposit') {
         // FLOW B: REDIRECT MODE (server generates reference + calls Chapa API)
         $generatedTxRef = "DEP-{$tgId}-" . time() . "-" . bin2hex(random_bytes(4));
         
-        $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending', :reference_id)");
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $generatedTxRef, 'reference_id' => $generatedTxRef]);
+        $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending')");
+        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $generatedTxRef]);
         
         // Initialize payment with Chapa
         $chapaResult = chapaInitializePayment([
@@ -307,8 +307,8 @@ if ($route === '/complete-deposit') {
             
             if (!$deposit) {
                 if ($amount > 0) {
-                    $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending', :reference_id)");
-                    $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $txRef, 'reference_id' => $txRef]);
+                    $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending')");
+                    $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $txRef]);
                     
                     $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
                     $stmt->execute(['tx_ref' => $txRef]);
