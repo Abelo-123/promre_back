@@ -71,7 +71,7 @@ if ($route === '/app/settings') {
             if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'testtyer_bot';
         }
 
-        $joadminMultiplier = getJoadminMultiplier();
+        $joadminMultiplier = getJoadminMultiplier($pdo);
         $pMult = $settings['rateMultiplier'];
         if ($pMult < 10.0) {
             $settings['rateMultiplier'] = $pMult * $joadminMultiplier;

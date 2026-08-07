@@ -226,7 +226,7 @@ if ($route === '/services') {
             if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
         } catch (Exception $e) {}
 
-        $joadminMultiplier = getJoadminMultiplier();
+        $joadminMultiplier = getJoadminMultiplier($pdo);
         if ($primoraMultiplier < 10.0) {
             $rateMultiplier = $primoraMultiplier * $joadminMultiplier;
         } else {
@@ -383,7 +383,7 @@ if ($route === '/services/top') {
             if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
         } catch (Exception $e) {}
 
-        $joadminMultiplier = getJoadminMultiplier();
+        $joadminMultiplier = getJoadminMultiplier($pdo);
         if ($primoraMultiplier < 10.0) {
             $rateMultiplier = $primoraMultiplier * $joadminMultiplier;
         } else {

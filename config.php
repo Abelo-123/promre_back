@@ -165,13 +165,37 @@ function curlRequest($method, $url, $headers = [], $body = null, $timeout = 30) 
     ];
 }
 
-// Helper to dynamically fetch joadmin's rate multiplier (with local fast cache)
-function getJoadminMultiplier() {
+// Helper to dynamically fetch joadmin's rate multiplier (with direct DB lookup + HTTP fallback)
+function getJoadminMultiplier($pdo = null) {
     static $cachedVal = null;
     static $cachedTime = 0;
     
     if ($cachedVal !== null && (time() - $cachedTime) < 5) {
         return $cachedVal;
+    }
+    
+    // 1. Direct DB lookup (fastest & 100% reliable since apps share DB cluster)
+    if ($pdo) {
+        try {
+            $stmt = $pdo->prepare("
+                SELECT setting_value 
+                FROM settings 
+                WHERE setting_key IN ('min_rate_multiplier', 'rate_multiplier') 
+                  AND (bot_id = '8958935808' OR bot_id = '8958935808:AAHIKPlmSFX5YhSMvIQuTUba9QC6QUes5xk' OR bot_id IS NULL OR bot_id = '' OR bot_id = 'default_bot')
+                ORDER BY (setting_key = 'min_rate_multiplier') DESC, id DESC 
+                LIMIT 1
+            ");
+            $stmt->execute();
+            $row = $stmt->fetch();
+            if ($row && !empty($row['setting_value'])) {
+                $val = (float)$row['setting_value'];
+                if ($val > 0) {
+                    $cachedVal = $val;
+                    $cachedTime = time();
+                    return $val;
+                }
+            }
+        } catch (Exception $e) {}
     }
     
     $cacheDir = __DIR__ . '/cache';
@@ -191,17 +215,24 @@ function getJoadminMultiplier() {
     
     try {
         $joadminUrl = getEnvVar('JOADMIN_SERVER_URL', 'https://padmin121.onrender.com');
-        $res = curlRequest('GET', "{$joadminUrl}/api/admin/reseller/min-multiplier", [], null, 5);
-        if ($res['code'] === 200 && !empty($res['body'])) {
-            $data = json_decode($res['body'], true);
-            $rawVal = isset($data['min_rate_multiplier']) ? $data['min_rate_multiplier'] : (isset($data['rate_multiplier']) ? $data['rate_multiplier'] : null);
-            if ($rawVal !== null) {
-                $val = (float)$rawVal;
-                if ($val > 0) {
-                    $cachedVal = $val;
-                    $cachedTime = time();
-                    @file_put_contents($cacheFile, json_encode(['time' => time(), 'val' => $val]));
-                    return $val;
+        $endpoints = [
+            "{$joadminUrl}/api/reseller/min-multiplier",
+            "{$joadminUrl}/api/admin/reseller/min-multiplier"
+        ];
+        
+        foreach ($endpoints as $endpoint) {
+            $res = curlRequest('GET', $endpoint, [], null, 5);
+            if ($res['code'] === 200 && !empty($res['body'])) {
+                $data = json_decode($res['body'], true);
+                $rawVal = isset($data['min_rate_multiplier']) ? $data['min_rate_multiplier'] : (isset($data['rate_multiplier']) ? $data['rate_multiplier'] : null);
+                if ($rawVal !== null) {
+                    $val = (float)$rawVal;
+                    if ($val > 0) {
+                        $cachedVal = $val;
+                        $cachedTime = time();
+                        @file_put_contents($cacheFile, json_encode(['time' => time(), 'val' => $val]));
+                        return $val;
+                    }
                 }
             }
         }
@@ -210,7 +241,7 @@ function getJoadminMultiplier() {
     // Fallback to stale cache if cURL fails
     if (file_exists($cacheFile)) {
         $cData = json_decode(@file_get_contents($cacheFile), true);
-        if ($cData && isset($cData['val'])) {
+        if ($cData && isset($cData['val']) && (float)$cData['val'] > 0) {
             return (float)$cData['val'];
         }
     }
