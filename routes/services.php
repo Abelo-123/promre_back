@@ -218,13 +218,20 @@ if ($route === '/services') {
         }
         
         // 1. Get database configs
-        $rateMultiplier = 55.0;
+        $primoraMultiplier = 55.0;
         try {
             $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
-            if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 55.0;
+            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
         } catch (Exception $e) {}
+
+        $joadminMultiplier = getJoadminMultiplier();
+        if ($primoraMultiplier < 10.0) {
+            $rateMultiplier = $primoraMultiplier * $joadminMultiplier;
+        } else {
+            $rateMultiplier = $primoraMultiplier * ($joadminMultiplier / 55.0);
+        }
 
         // Custom pricing map
         $customPricingMap = [];
@@ -368,13 +375,20 @@ if ($route === '/services/top') {
         }
 
         // Get multiplier
-        $rateMultiplier = 55.0;
+        $primoraMultiplier = 55.0;
         try {
-            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' AND bot_id = :bot_id");
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
-            if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 55.0;
+            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
         } catch (Exception $e) {}
+
+        $joadminMultiplier = getJoadminMultiplier();
+        if ($primoraMultiplier < 10.0) {
+            $rateMultiplier = $primoraMultiplier * $joadminMultiplier;
+        } else {
+            $rateMultiplier = $primoraMultiplier * ($joadminMultiplier / 55.0);
+        }
 
         // Filter and transform
         $topServices = [];

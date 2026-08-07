@@ -70,6 +70,14 @@ if ($route === '/app/settings') {
             if ($key === 'top_services_ids') $settings['topServicesIds'] = $val ?: '';
             if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'testtyer_bot';
         }
+
+        $joadminMultiplier = getJoadminMultiplier();
+        $pMult = $settings['rateMultiplier'];
+        if ($pMult < 10.0) {
+            $settings['rateMultiplier'] = $pMult * $joadminMultiplier;
+        } else {
+            $settings['rateMultiplier'] = $pMult * ($joadminMultiplier / 55.0);
+        }
         
         echo json_encode($settings);
     } catch (Exception $e) {

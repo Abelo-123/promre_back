@@ -161,3 +161,55 @@ function curlRequest($method, $url, $headers = [], $body = null, $timeout = 30) 
         'error' => $error
     ];
 }
+
+// Helper to dynamically fetch joadmin's rate multiplier (with local fast cache)
+function getJoadminMultiplier() {
+    static $cachedVal = null;
+    static $cachedTime = 0;
+    
+    if ($cachedVal !== null && (time() - $cachedTime) < 30) {
+        return $cachedVal;
+    }
+    
+    $cacheDir = __DIR__ . '/cache';
+    if (!file_exists($cacheDir)) {
+        @mkdir($cacheDir, 0755, true);
+    }
+    $cacheFile = "{$cacheDir}/cache_joadmin_multiplier.json";
+    
+    if (file_exists($cacheFile)) {
+        $cData = json_decode(@file_get_contents($cacheFile), true);
+        if ($cData && isset($cData['time']) && (time() - $cData['time']) < 30 && isset($cData['val'])) {
+            $cachedVal = (float)$cData['val'];
+            $cachedTime = time();
+            return $cachedVal;
+        }
+    }
+    
+    try {
+        $joadminUrl = getEnvVar('JOADMIN_SERVER_URL', 'https://padmin121.onrender.com');
+        $res = curlRequest('GET', "{$joadminUrl}/api/admin/reseller/min-multiplier", [], null, 5);
+        if ($res['code'] === 200 && !empty($res['body'])) {
+            $data = json_decode($res['body'], true);
+            if ($data && isset($data['min_rate_multiplier'])) {
+                $val = (float)$data['min_rate_multiplier'];
+                if ($val > 0) {
+                    $cachedVal = $val;
+                    $cachedTime = time();
+                    @file_put_contents($cacheFile, json_encode(['time' => time(), 'val' => $val]));
+                    return $val;
+                }
+            }
+        }
+    } catch (Exception $e) {}
+    
+    // Fallback to stale cache if cURL fails
+    if (file_exists($cacheFile)) {
+        $cData = json_decode(@file_get_contents($cacheFile), true);
+        if ($cData && isset($cData['val'])) {
+            return (float)$cData['val'];
+        }
+    }
+    
+    return 55.0; // Default baseline if unreachable
+}
