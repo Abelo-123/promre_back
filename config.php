@@ -136,7 +136,10 @@ function curlRequest($method, $url, $headers = [], $body = null, $timeout = 30) 
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Keep simple for shared hosting cert trust issues
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
     
     if (strtoupper($method) === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);
@@ -167,7 +170,7 @@ function getJoadminMultiplier() {
     static $cachedVal = null;
     static $cachedTime = 0;
     
-    if ($cachedVal !== null && (time() - $cachedTime) < 30) {
+    if ($cachedVal !== null && (time() - $cachedTime) < 5) {
         return $cachedVal;
     }
     
@@ -179,7 +182,7 @@ function getJoadminMultiplier() {
     
     if (file_exists($cacheFile)) {
         $cData = json_decode(@file_get_contents($cacheFile), true);
-        if ($cData && isset($cData['time']) && (time() - $cData['time']) < 30 && isset($cData['val'])) {
+        if ($cData && isset($cData['time']) && (time() - $cData['time']) < 5 && isset($cData['val'])) {
             $cachedVal = (float)$cData['val'];
             $cachedTime = time();
             return $cachedVal;
@@ -191,8 +194,9 @@ function getJoadminMultiplier() {
         $res = curlRequest('GET', "{$joadminUrl}/api/admin/reseller/min-multiplier", [], null, 5);
         if ($res['code'] === 200 && !empty($res['body'])) {
             $data = json_decode($res['body'], true);
-            if ($data && isset($data['min_rate_multiplier'])) {
-                $val = (float)$data['min_rate_multiplier'];
+            $rawVal = isset($data['min_rate_multiplier']) ? $data['min_rate_multiplier'] : (isset($data['rate_multiplier']) ? $data['rate_multiplier'] : null);
+            if ($rawVal !== null) {
+                $val = (float)$rawVal;
                 if ($val > 0) {
                     $cachedVal = $val;
                     $cachedTime = time();
