@@ -22,7 +22,7 @@ if ($route === '/app/log-init-data') {
 // Route: /app/settings (GET)
 if ($route === '/app/settings') {
     try {
-        $stmt = $pdo->prepare('SELECT setting_key, setting_value FROM settings WHERE bot_id = :bot_id');
+        $stmt = $pdo->prepare('SELECT setting_key, setting_value FROM settings ORDER BY (bot_id = :bot_id) DESC');
         $stmt->execute(['bot_id' => getCurrentBotId()]);
         $rows = $stmt->fetchAll();
         

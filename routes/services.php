@@ -220,7 +220,7 @@ if ($route === '/services') {
         // 1. Get database configs
         $rateMultiplier = 55.0;
         try {
-            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' AND bot_id = :bot_id");
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
             if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 55.0;
