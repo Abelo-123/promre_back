@@ -227,7 +227,7 @@ if ($route === '/orders/place') {
             }
         }
 
-        $totalCostEtb = (float)number_format($finalRateEtb * ($quantity / 1000), 2, '.', '');
+        $totalCostEtb = max(0.01, (float)number_format($finalRateEtb * ($quantity / 1000), 2, '.', ''));
 
         if ((float)$user['balance'] < $totalCostEtb) {
             $pdo->rollBack();
@@ -235,6 +235,29 @@ if ($route === '/orders/place') {
                 'success' => false,
                 'error' => "Insufficient wallet balance. You have " . number_format((float)$user['balance'], 2) . " ETB, but this order costs " . number_format($totalCostEtb, 2) . " ETB."
             ]);
+            exit;
+        }
+
+        // Calculate wholesale reseller cost (cost to Primora based on Joadmin multiplier)
+        $resellerCostEtb = max(0.01, (float)number_format(($unitRateUsd * $joadminMultiplier) * ($quantity / 1000), 2, '.', ''));
+
+        // Fetch reseller_balance from settings using getCurrentBotId()
+        $botId = getCurrentBotId();
+        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id LIMIT 1");
+        $stmt->execute(['bot_id' => $botId]);
+        $resellerRow = $stmt->fetch();
+        $resellerBalance = $resellerRow ? (float)$resellerRow['setting_value'] : 0.0;
+
+        // Fetch sum of reseller_cost of all currently pending or processing orders for this specific bot
+        $stmt = $pdo->prepare("SELECT SUM(reseller_cost) FROM orders WHERE status IN ('pending', 'processing', 'inprogress', 'in_progress') AND bot_id = :bot_id");
+        $stmt->execute(['bot_id' => $botId]);
+        $pendingCost = (float)($stmt->fetchColumn() ?: 0.0);
+
+        $effectiveResellerBalance = $resellerBalance - $pendingCost;
+
+        if ($effectiveResellerBalance < $resellerCostEtb) {
+            $pdo->rollBack();
+            echo json_encode(['success' => false, 'error' => 'Insufficient reseller balance on admin panel. Please contact admin.']);
             exit;
         }
 
@@ -289,27 +312,38 @@ if ($route === '/orders/place') {
             }
         }
 
-        // 7. Insert Order into DB
+        $dbOrderStatus = $finalOrderStatus ? strtolower(str_replace(' ', '_', $finalOrderStatus)) : 'pending';
+
+        // 7. Insert Order into DB (including reseller_cost column)
         $stmt = $pdo->prepare("
             INSERT INTO orders 
-            (user_id, bot_id, service_id, service_name, link, target_link, quantity, api_order_id, charge, status, created_at) 
-            VALUES (:user_id, :bot_id, :service_id, :service_name, :link, :target_link, :quantity, :api_order_id, :charge, 'pending', NOW())
+            (user_id, bot_id, service_id, service_name, reseller_cost, link, target_link, quantity, api_order_id, charge, status, created_at) 
+            VALUES (:user_id, :bot_id, :service_id, :service_name, :reseller_cost, :link, :target_link, :quantity, :api_order_id, :charge, :status, NOW())
         ");
         $stmt->execute([
-            'user_id'      => $tgId,
-            'bot_id'       => getCurrentBotId(),
-            'service_id'   => $serviceId,
-            'service_name' => $serviceData['name'],
-            'link'         => $link,
-            'target_link'  => $link,
-            'quantity'     => $quantity,
-            'api_order_id' => $providerOrderId,
-            'charge'       => $totalCostEtb
+            'user_id'       => $tgId,
+            'bot_id'        => getCurrentBotId(),
+            'service_id'    => $serviceId,
+            'service_name'  => $serviceData['name'],
+            'reseller_cost' => $resellerCostEtb,
+            'link'          => $link,
+            'target_link'   => $link,
+            'quantity'      => $quantity,
+            'api_order_id'  => $providerOrderId,
+            'charge'        => $totalCostEtb,
+            'status'        => $dbOrderStatus
         ]);
         $dbId = $pdo->lastInsertId();
 
         // 8. Deduct user balance & Log ledger
         $newBalance = processTransaction($tgId, 'order', -$totalCostEtb, "Placed Order #{$dbId}", $pdo, 'order', $dbId);
+
+        // 8.5. Deduct reseller balance ONLY if status is already completed
+        if (!in_array($dbOrderStatus, ['pending', 'processing', 'inprogress', 'in_progress'])) {
+            $newResellerBalance = $resellerBalance - $resellerCostEtb;
+            $stmt = $pdo->prepare("UPDATE settings SET setting_value = :val WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id");
+            $stmt->execute(['val' => (string)$newResellerBalance, 'bot_id' => $botId]);
+        }
 
         $pdo->commit();
 
@@ -381,7 +415,7 @@ if ($route === '/orders/status') {
 
     try {
         $stmt = $pdo->prepare("
-            SELECT id, api_order_id, charge, quantity, status 
+            SELECT id, api_order_id, charge, quantity, status, reseller_cost, bot_id 
             FROM orders 
             WHERE user_id = :user_id AND bot_id = :bot_id AND status IN ('pending', 'in_progress', 'processing')
         ");
@@ -441,6 +475,41 @@ if ($route === '/orders/status') {
                             $pdo->commit();
                         } catch (Exception $txErr) {
                             $pdo->rollBack();
+                        }
+                    }
+
+                    // Deduct reseller balance on transition to success/completed status
+                    if (!in_array($newStatus, ['pending', 'processing', 'in_progress', 'inprogress'])) {
+                        if (!in_array($newStatus, $terminalStatuses)) {
+                            // Successful or partial completion
+                            $deduction = 0.0;
+                            if ($newStatus === 'partial') {
+                                $remains = (int)(isset($info['remains']) ? $info['remains'] : 0);
+                                $qty = (int)$order['quantity'];
+                                if ($qty > 0 && $remains < $qty) {
+                                    $completedRatio = ($qty - $remains) / $qty;
+                                    $deduction = (float)$order['reseller_cost'] * $completedRatio;
+                                }
+                            } else {
+                                $deduction = (float)$order['reseller_cost'];
+                            }
+
+                            if ($deduction > 0) {
+                                try {
+                                    // Fetch current reseller_balance safely
+                                    $stmtGet = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id LIMIT 1");
+                                    $stmtGet->execute(['bot_id' => $order['bot_id']]);
+                                    $currentResellerBal = (float)($stmtGet->fetchColumn() ?: 0.0);
+
+                                    $newResellerBal = $currentResellerBal - $deduction;
+
+                                    // Update reseller_balance setting
+                                    $stmtDeduct = $pdo->prepare("UPDATE settings SET setting_value = :val WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id");
+                                    $stmtDeduct->execute(['val' => (string)$newResellerBal, 'bot_id' => $order['bot_id']]);
+                                } catch (Exception $e) {
+                                    error_log("RESELLER BALANCE DEDUCTION FAILED FOR BOT " . $order['bot_id'] . ": " . $e->getMessage());
+                                }
+                            }
                         }
                     }
                 }
