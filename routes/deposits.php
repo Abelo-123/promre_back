@@ -353,10 +353,16 @@ if ($route === '/complete-deposit') {
                     (int)$deposit['id']
                 );
 
-                // Increment total_deposit setting
+                // Increment total_deposit setting safely
                 try {
-                    $stmtTot = $pdo->prepare('INSERT INTO settings (setting_key, bot_id, setting_value) VALUES ("total_deposit", :bot_id, :val) ON DUPLICATE KEY UPDATE setting_value = CAST(setting_value AS DECIMAL(10,2)) + :val_up');
-                    $stmtTot->execute(['bot_id' => getCurrentBotId(), 'val' => (string)$verifiedAmount, 'val_up' => $verifiedAmount]);
+                    $cBotId = getCurrentBotId();
+                    $stmtGet = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'total_deposit' AND bot_id = :bot_id LIMIT 1");
+                    $stmtGet->execute(['bot_id' => $cBotId]);
+                    $currentTotal = (float)($stmtGet->fetchColumn() ?: 0.0);
+                    $newTotal = $currentTotal + $verifiedAmount;
+
+                    $stmtTot = $pdo->prepare("INSERT INTO settings (setting_key, bot_id, setting_value) VALUES ('total_deposit', :bot_id, :val) ON DUPLICATE KEY UPDATE setting_value = :val_up");
+                    $stmtTot->execute(['bot_id' => $cBotId, 'val' => (string)$newTotal, 'val_up' => (string)$newTotal]);
                 } catch (Exception $totErr) {}
                 
                 $pdo->commit();
@@ -523,6 +529,18 @@ if ($route === '/verify-deposit') {
                 (int)$deposit['id']
             );
             
+            // Increment total_deposit setting safely
+            try {
+                $cBotId = getCurrentBotId();
+                $stmtGet = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'total_deposit' AND bot_id = :bot_id LIMIT 1");
+                $stmtGet->execute(['bot_id' => $cBotId]);
+                $currentTotal = (float)($stmtGet->fetchColumn() ?: 0.0);
+                $newTotal = $currentTotal + $verifiedAmount;
+
+                $stmtTot = $pdo->prepare("INSERT INTO settings (setting_key, bot_id, setting_value) VALUES ('total_deposit', :bot_id, :val) ON DUPLICATE KEY UPDATE setting_value = :val_up");
+                $stmtTot->execute(['bot_id' => $cBotId, 'val' => (string)$newTotal, 'val_up' => (string)$newTotal]);
+            } catch (Exception $totErr) {}
+            
             $pdo->commit();
             
             // Notify deposit
@@ -638,6 +656,17 @@ if ($route === '/chapa-callback') {
                     'deposit',
                     (int)$deposit['id']
                 );
+                
+                // Increment total_deposit setting safely
+                try {
+                    $stmtGet = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'total_deposit' AND bot_id = :bot_id LIMIT 1");
+                    $stmtGet->execute(['bot_id' => $currentBotId]);
+                    $currentTotal = (float)($stmtGet->fetchColumn() ?: 0.0);
+                    $newTotal = $currentTotal + $verifiedAmount;
+
+                    $stmtTot = $pdo->prepare("INSERT INTO settings (setting_key, bot_id, setting_value) VALUES ('total_deposit', :bot_id, :val) ON DUPLICATE KEY UPDATE setting_value = :val_up");
+                    $stmtTot->execute(['bot_id' => $currentBotId, 'val' => (string)$newTotal, 'val_up' => (string)$newTotal]);
+                } catch (Exception $totErr) {}
                 
                 $pdo->commit();
                 
