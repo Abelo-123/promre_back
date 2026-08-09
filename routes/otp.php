@@ -52,7 +52,7 @@ if ($route === '/otp/send') {
         // Send SMS through SMS Ethiopia provider (JSON POST)
         $smsPayload = [
             'msisdn' => $phoneNumber,
-            'text'   => "Your Ziviop verification code is: {$otp}"
+            'text'   => "Your Primora444 verification code is: {$otp}"
         ];
         
         $res = curlRequest('POST', $smsApiUrl, [
