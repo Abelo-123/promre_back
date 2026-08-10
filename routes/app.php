@@ -54,7 +54,7 @@ if ($route === '/app/settings') {
             'userCanOrder' => true,
             'marqueeText' => 'Welcome to Paxyo SMM!',
             'topServicesIds' => '',
-            'botUsername' => 'testtyer_bot'
+            'botUsername' => 'Primora444_bot'
         ];
         
         foreach ($rows as $row) {
@@ -68,7 +68,7 @@ if ($route === '/app/settings') {
             if ($key === 'user_can_order') $settings['userCanOrder'] = ($val === '1' || $val === 'true');
             if ($key === 'marquee_text') $settings['marqueeText'] = $val;
             if ($key === 'top_services_ids') $settings['topServicesIds'] = $val ?: '';
-            if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'testtyer_bot';
+            if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'Primora444_bot';
         }
         
         echo json_encode($settings);
@@ -81,7 +81,7 @@ if ($route === '/app/settings') {
             'userCanOrder' => true,
             'marqueeText' => '',
             'topServicesIds' => '',
-            'botUsername' => 'testtyer_bot'
+            'botUsername' => 'Primora444_bot'
         ]);
     }
     exit;
