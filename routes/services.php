@@ -262,10 +262,10 @@ if ($route === '/services') {
         } catch (Exception $e) {}
 
         // Combine multipliers: (GodOfPanel USD Rate) * (joadmin multiplier) * (primora multiplier)
-        if (($primoraMultiplier * 220) <= 10.0) {
-            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 220);
+        if (($primoraMultiplier * 225) <= 10.0) {
+            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
         } else {
-            $rateMultiplier = ($primoraMultiplier * 220) * ($joadminMultiplier / 55.0);
+            $rateMultiplier = ($primoraMultiplier * 225) * ($joadminMultiplier / 55.0);
         }
 
         // Custom pricing map
