@@ -166,10 +166,10 @@ if ($route === '/orders/place') {
         $row = $stmt->fetch();
         if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
 
-        if ($primoraMultiplier <= 10.0) {
-            $rateMultiplier = $joadminMultiplier * $primoraMultiplier;
+        if (($primoraMultiplier * 220) <= 10.0) {
+            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 220);
         } else {
-            $rateMultiplier = $primoraMultiplier * ($joadminMultiplier / 55.0);
+            $rateMultiplier = ($primoraMultiplier * 220) * ($joadminMultiplier / 55.0);
         }
 
         // 2. Lock user auth row to prevent race conditions
