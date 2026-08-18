@@ -6,15 +6,26 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/notify.php';
 
+<<<<<<< HEAD
 // Mock User Details for JOHN Bot
 $tgId = "779060335";
 $firstName = "Paxyo Rocket Test (JOHN)";
 $username = "paxyo_rocket_john";
+=======
+// Mock User Details
+$tgId = "779060335";
+$firstName = "Paxyo Rocket Test";
+$username = "paxyo_rocket";
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
 $botId = getCurrentBotId();
 
 $steps = [];
 
+<<<<<<< HEAD
 // Step 1: Reset user from database
+=======
+// Step 1: Reset user if requested or by default for "Rocket Test"
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
 $steps[] = [
     'name' => '1. Database Reset Phase',
     'desc' => "Clearing existing user record (ID: {$tgId}, Bot ID: {$botId}) from database to simulate a fresh new user entry.",
@@ -67,16 +78,27 @@ if ($steps[0]['status'] === 'success') {
     $steps[1]['status'] = 'skipped';
 }
 
+<<<<<<< HEAD
 // Step 3: Webhook Dispatch to Bot JOHN Server
 $steps[] = [
     'name' => '3. Bot Server Webhook Dispatch',
     'desc' => 'Dispatching POST request containing new user parameters to Telegram Bot JOHN server webhook.',
+=======
+// Step 3: Webhook Dispatch to Bot Server
+$steps[] = [
+    'name' => '3. Bot Server Webhook Dispatch',
+    'desc' => 'Dispatching POST request containing new user parameters to Telegram Bot server webhook.',
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
     'status' => 'pending',
     'info' => ''
 ];
 
 if ($steps[1]['status'] === 'success') {
+<<<<<<< HEAD
     $paxyoBotUrl = 'https://pax-bot121-1.onrender.com/api/sendToJohn';
+=======
+    $paxyoBotUrl = 'https://abiybot34.onrender.com/api/sendToJohn';
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
     $payload = ['type' => 'newuser', 'uid' => $tgId, 'uuid' => $firstName];
     
     $res = curlRequest('POST', $paxyoBotUrl, ['Content-Type: application/json'], json_encode($payload), 8);
@@ -102,7 +124,11 @@ $steps[] = [
 
 if ($steps[2]['status'] === 'success') {
     $steps[3]['status'] = 'success';
+<<<<<<< HEAD
     $steps[3]['info'] = 'Admin bot token validated (8662579997). Message sent to Telegram API queues for admin users.';
+=======
+    $steps[3]['info'] = 'Admin bot token validated. Message sent to Telegram API queues for admin users.';
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
 } else {
     $steps[3]['status'] = 'error';
     $steps[3]['info'] = 'Skipped because the Bot Webhook failed.';
@@ -114,7 +140,11 @@ if ($steps[2]['status'] === 'success') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<<<<<<< HEAD
     <title>Paxyo Rocket Diagnostic Dashboard (JOHN)</title>
+=======
+    <title>Paxyo Rocket Diagnostic Dashboard</title>
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -262,8 +292,13 @@ if ($steps[2]['status'] === 'success') {
 <body>
     <div class="container">
         <header>
+<<<<<<< HEAD
             <h1>🚀 Rocket Diagnostic Test (JOHN)</h1>
             <p class="subtitle">Simulating end-to-end user registration and bot notification broadcast flow for Bot JOHN</p>
+=======
+            <h1>🚀 Rocket Diagnostic Test</h1>
+            <p class="subtitle">Simulating end-to-end user registration and bot notification broadcast flow</p>
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
         </header>
 
         <div class="card">

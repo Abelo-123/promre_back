@@ -176,18 +176,23 @@ if ($route === '/app/auth') {
     // Force currentBotId evaluation BEFORE user lookup to make sure session/globals are populated
     $botId = getCurrentBotId();
     
+    error_log("[DEBUG Auth] Starting auth request. tgId: {$tgId}, firstName: {$firstName}, username: {$username}, botId: {$botId}");
+    
     try {
         // Look up user
+        error_log("[DEBUG Auth] Executing DB lookup for tg_id={$tgId} AND bot_id={$botId}");
         $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
         $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
         $user = $stmt->fetch();
         
         if (!$user) {
+            error_log("[DEBUG Auth] User NOT found in DB. Initiating new registration...");
             // Generate a fresh unique referral code
             $randomHex = strtoupper(bin2hex(random_bytes(3)));
             $idSuffix = substr($tgId, -3);
             $newRefCode = "REF{$randomHex}{$idSuffix}";
             
+            error_log("[DEBUG Auth] Inserting new user into auth table with referral code: {$newRefCode}");
             $stmt = $pdo->prepare("
                 INSERT INTO auth (tg_id, bot_id, username, first_name, last_name, photo_url, balance, auth_provider, last_login, referral_code) 
                 VALUES (:tg_id, :bot_id, :username, :first_name, :last_name, :photo_url, 0.00, 'telegram', NOW(), :referral_code)
@@ -202,16 +207,21 @@ if ($route === '/app/auth') {
                 'referral_code' => $newRefCode
             ]);
             
+            error_log("[DEBUG Auth] Database insert complete. Triggering notifyNewUser...");
             // Notify Admin Bot Async/Parallel
             try {
                 notifyNewUser($tgId, $firstName);
-            } catch (Exception $e) {}
+                error_log("[DEBUG Auth] notifyNewUser called successfully");
+            } catch (Exception $e) {
+                error_log("[DEBUG Auth ERROR] notifyNewUser failed: " . $e->getMessage());
+            }
             
             // Fetch newly created user
             $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
             $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
             $user = $stmt->fetch();
         } else {
+            error_log("[DEBUG Auth] User already exists in DB. Last login was: " . ($user['last_login'] ?? 'unknown'));
             // User exists, update referral code if missing
             $refCode = isset($user['referral_code']) ? $user['referral_code'] : null;
             if (empty($refCode)) {
@@ -250,6 +260,51 @@ if ($route === '/app/auth') {
             if (!is_array($refers)) $refers = [];
         }
         
+        // Debugging info
+        $debugInfo = [
+            'input_user_id' => $tgId,
+            'resolved_bot_id' => $botId,
+            'db_user_found' => !empty($user),
+            'db_user_balance' => !empty($user) ? (float)$user['balance'] : null,
+            'is_telegram_payload' => !empty($tgUser),
+            'raw_first_name' => $firstName,
+            'raw_username' => $username,
+        ];
+
+        // Fetch GodOfPanel (upstream provider) balance for debugging if API key exists
+        if (!empty($gopApiKey)) {
+            try {
+                $gopRes = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+                    'key' => $gopApiKey,
+                    'action' => 'balance'
+                ], 10);
+                $gopData = json_decode($gopRes['body'], true);
+                if ($gopData && isset($gopData['balance'])) {
+                    $debugInfo['upstream_provider'] = [
+                        'name' => 'GodOfPanel',
+                        'balance' => $gopData['balance'],
+                        'currency' => isset($gopData['currency']) ? $gopData['currency'] : 'USD'
+                    ];
+                } else {
+                    $debugInfo['upstream_provider'] = [
+                        'name' => 'GodOfPanel',
+                        'error' => isset($gopData['error']) ? $gopData['error'] : 'Invalid response format',
+                        'raw_response' => substr($gopRes['body'], 0, 500)
+                    ];
+                }
+            } catch (Exception $e) {
+                $debugInfo['upstream_provider'] = [
+                    'name' => 'GodOfPanel',
+                    'error' => $e->getMessage()
+                ];
+            }
+        } else {
+            $debugInfo['upstream_provider'] = [
+                'name' => 'GodOfPanel',
+                'error' => 'API Key is empty or missing'
+            ];
+        }
+        
         echo json_encode([
             'success' => true,
             'user' => [
@@ -267,7 +322,8 @@ if ($route === '/app/auth') {
                 'referral_code'  => $user['referral_code'],
                 'referred_by'    => isset($user['referred_by']) ? $user['referred_by'] : null,
                 'refers'         => $refers
-            ]
+            ],
+            'debug' => $debugInfo
         ]);
         
     } catch (Exception $e) {

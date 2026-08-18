@@ -1,6 +1,10 @@
 <?php
 /**
+<<<<<<< HEAD
  * Telegrham signature validation utility
+=======
+ * Telpegdddram signature validation utility
+>>>>>>> da924544d7d851ae3f683fd545d038d810548a84
  */
 
 require_once __DIR__ . '/config.php';
@@ -9,6 +13,13 @@ function getCurrentBotId($requestBotId = null) {
     global $primaryBotId;
     if ($requestBotId) {
         return $requestBotId;
+    }
+    
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    if (isset($_SESSION['bot_id']) && !empty($_SESSION['bot_id'])) {
+        return $_SESSION['bot_id'];
     }
     
     global $requestData;
@@ -63,6 +74,10 @@ function getTelegramUser($initData) {
             $calc   = hash_hmac('sha256', $dataCheckString, $secret);
             if ($hash === $calc) {
                 $isValid = true;
+                if (session_status() === PHP_SESSION_NONE) {
+                    @session_start();
+                }
+                $_SESSION['bot_id'] = $botId;
                 break;
             }
         }

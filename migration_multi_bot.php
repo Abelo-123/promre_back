@@ -32,18 +32,50 @@ try {
     }
 
     // Drop the old singular PRIMARY KEY (tg_id) and make (tg_id, bot_id) the compound PRIMARY KEY
+    // Drop unique key tg_id_bot_id if it exists to avoid redundancy (since primary key will cover it)
     try {
-        // Drop unique key tg_id_bot_id if it exists to avoid redundancy (since primary key will cover it)
-        try {
-            $pdo->exec("ALTER TABLE auth DROP INDEX tg_id_bot_id");
-            echo "  Dropped redundant unique index tg_id_bot_id\n";
-        } catch (Exception $e) {}
+        $pdo->exec("ALTER TABLE auth DROP INDEX tg_id_bot_id");
+        echo "  Dropped redundant unique index tg_id_bot_id\n";
+    } catch (Exception $e) {
+        echo "  Note: tg_id_bot_id index already dropped or not found.\n";
+    }
 
-        // Drop the primary key constraint on tg_id and make (tg_id, bot_id) the primary key
+    // Drop the foreign key constraints that reference auth(tg_id)
+    try {
+        $pdo->exec("ALTER TABLE deposits DROP FOREIGN KEY deposits_ibfk_1");
+        echo "  Dropped foreign key deposits_ibfk_1\n";
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE orders DROP FOREIGN KEY orders_ibfk_1");
+        echo "  Dropped foreign key orders_ibfk_1\n";
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE user_alerts DROP FOREIGN KEY user_alerts_ibfk_1");
+        echo "  Dropped foreign key user_alerts_ibfk_1\n";
+    } catch (Exception $e) {}
+
+    // Ensure there are no NULL values in bot_id
+    try {
+        $pdo->exec("UPDATE auth SET bot_id = '{$defaultBotId}' WHERE bot_id IS NULL OR bot_id = ''");
+        echo "  Updated NULL bot_ids to default bot ID\n";
+    } catch (Exception $e) {
+        echo "  Error updating NULL bot_ids: " . $e->getMessage() . "\n";
+    }
+
+    // Make bot_id column NOT NULL
+    try {
+        $pdo->exec("ALTER TABLE auth MODIFY COLUMN bot_id VARCHAR(50) NOT NULL");
+        echo "  Set bot_id column to NOT NULL\n";
+    } catch (Exception $e) {
+        echo "  Error setting bot_id column to NOT NULL: " . $e->getMessage() . "\n";
+    }
+
+    // Drop the primary key constraint on tg_id and make (tg_id, bot_id) the primary key
+    try {
         $pdo->exec("ALTER TABLE auth DROP PRIMARY KEY, ADD PRIMARY KEY (tg_id, bot_id)");
         echo "  Successfully updated PRIMARY KEY to compound (tg_id, bot_id)\n";
     } catch (Exception $e) {
-        echo "  Note/Error updating primary key: " . $e->getMessage() . "\n";
+        echo "  Error updating PRIMARY KEY to compound: " . $e->getMessage() . "\n";
     }
 
     // 2. Alter settings table

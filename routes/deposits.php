@@ -36,6 +36,9 @@ function chapaInitializePayment($data) {
         'customization' => [
             'title'       => 'Paxyo Deposit',
             'description' => 'Wallet deposit'
+        ],
+        'meta'          => [
+            'hide_receipt' => true
         ]
     ];
     
@@ -265,9 +268,13 @@ if ($route === '/complete-deposit') {
         }
         
         // 1. Check if already successfully processed
-        $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id');
-        $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref');
+        $stmt->execute(['tx_ref' => $txRef]);
         $deposit = $stmt->fetch();
+        
+        if ($deposit) {
+            $_SESSION['bot_id'] = $deposit['bot_id'];
+        }
         
         if ($deposit && $deposit['status'] === 'success') {
             $stmt = $pdo->prepare('SELECT balance FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
@@ -290,18 +297,25 @@ if ($route === '/complete-deposit') {
         $pdo->beginTransaction();
         try {
             // Lock deposit row FOR UPDATE
-            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id FOR UPDATE');
-            $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
+            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
+            $stmt->execute(['tx_ref' => $txRef]);
             $deposit = $stmt->fetch();
+            
+            if ($deposit) {
+                $_SESSION['bot_id'] = $deposit['bot_id'];
+            }
             
             if (!$deposit) {
                 if ($amount > 0) {
                     $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, status, reference_id) VALUES (:user_id, :bot_id, :amount, :tx_ref, 'pending', :reference_id)");
                     $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'amount' => $amount, 'tx_ref' => $txRef, 'reference_id' => $txRef]);
                     
-                    $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id FOR UPDATE');
-                    $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
+                    $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
+                    $stmt->execute(['tx_ref' => $txRef]);
                     $deposit = $stmt->fetch();
+                    if ($deposit) {
+                        $_SESSION['bot_id'] = $deposit['bot_id'];
+                    }
                 } else {
                     $pdo->rollBack();
                     echo json_encode(['success' => false, 'error' => 'Deposit record not found']);
@@ -398,9 +412,13 @@ if ($route === '/verify-deposit') {
         }
         
         // Check local database
-        $stmt = $pdo->prepare('SELECT status, amount, user_id FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id');
-        $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT status, amount, user_id, bot_id FROM deposits WHERE tx_ref = :tx_ref');
+        $stmt->execute(['tx_ref' => $txRef]);
         $depositCheck = $stmt->fetch();
+        
+        if ($depositCheck) {
+            $_SESSION['bot_id'] = $depositCheck['bot_id'];
+        }
         
         if (!$depositCheck) {
             echo json_encode(['success' => false, 'message' => 'Deposit record not found in our system']);
@@ -463,9 +481,12 @@ if ($route === '/verify-deposit') {
         // Success Flow
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref AND bot_id = :bot_id FOR UPDATE');
-            $stmt->execute(['tx_ref' => $txRef, 'bot_id' => getCurrentBotId()]);
+            $stmt = $pdo->prepare('SELECT * FROM deposits WHERE tx_ref = :tx_ref FOR UPDATE');
+            $stmt->execute(['tx_ref' => $txRef]);
             $deposit = $stmt->fetch();
+            if ($deposit) {
+                $_SESSION['bot_id'] = $deposit['bot_id'];
+            }
             
             if (!$deposit || $deposit['status'] === 'success') {
                 $pdo->rollBack();
