@@ -7,15 +7,11 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
 
 function sendNotification($type, $params) {
-<<<<<<< HEAD
-    $paxyoBotUrl = 'https://pax-bot121-1.onrender.com/api/sendToJohn';
-=======
     $botId = getCurrentBotId();
     $paxyoBotUrl = 'https://abiybot34.onrender.com/api/sendToJohn';
     if ($botId === '8998482898' || $botId === '8958935808') {
         $paxyoBotUrl = 'https://pax-bot121-1.onrender.com/api/sendToJohn';
     }
->>>>>>> da924544d7d851ae3f683fd545d038d810548a84
     $payload = array_merge(['type' => $type], $params);
     
     error_log("[DEBUG Notification] Preparing notification webhook payload: " . json_encode($payload));
