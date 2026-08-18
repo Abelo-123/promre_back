@@ -162,7 +162,7 @@ if ($route === '/orders/place') {
         $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' AND bot_id = :bot_id");
         $stmt->execute(['bot_id' => getCurrentBotId()]);
         $row = $stmt->fetch();
-        $rateMultiplier = $row ? (float)$row['setting_value'] : 55.0;
+        $rateMultiplier = $row ? (float)$row['setting_value'] : 400.0;
 
         // 2. Lock user auth row to prevent race conditions
         $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id FOR UPDATE');

@@ -47,7 +47,7 @@ if ($route === '/app/settings') {
         }
         
         $settings = [
-            'rateMultiplier' => 55.0,
+            'rateMultiplier' => 400.0,
             'discountPercent' => 0.0,
             'holidayName' => '',
             'maintenanceMode' => false,
@@ -61,7 +61,7 @@ if ($route === '/app/settings') {
             $key = $row['setting_key'];
             $val = $row['setting_value'];
             
-            if ($key === 'rate_multiplier') $settings['rateMultiplier'] = (float)$val ?: 55.0;
+            if ($key === 'rate_multiplier') $settings['rateMultiplier'] = (float)$val ?: 400.0;
             if ($key === 'discount_percent') $settings['discountPercent'] = (float)$val ?: 0.0;
             if ($key === 'holiday_name') $settings['holidayName'] = $val;
             if ($key === 'maintenance_mode') $settings['maintenanceMode'] = ($val === '1' || $val === 'true');
@@ -74,7 +74,7 @@ if ($route === '/app/settings') {
         echo json_encode($settings);
     } catch (Exception $e) {
         echo json_encode([
-            'rateMultiplier' => 55.0,
+            'rateMultiplier' => 400.0,
             'discountPercent' => 0.0,
             'holidayName' => '',
             'maintenanceMode' => false,
