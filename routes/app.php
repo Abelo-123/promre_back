@@ -54,11 +54,7 @@ if ($route === '/app/settings') {
             'userCanOrder' => true,
             'marqueeText' => 'Welcome to Paxyo SMM!',
             'topServicesIds' => '',
-<<<<<<< HEAD
-            'botUsername' => 'testtyer_bot'
-=======
             'botUsername' => 'Primora444_bot'
->>>>>>> ae06648f8b4bc1ddb7539a2533d1dd9d9c0f7fb4
         ];
         
         foreach ($rows as $row) {
@@ -72,8 +68,7 @@ if ($route === '/app/settings') {
             if ($key === 'user_can_order') $settings['userCanOrder'] = ($val === '1' || $val === 'true');
             if ($key === 'marquee_text') $settings['marqueeText'] = $val;
             if ($key === 'top_services_ids') $settings['topServicesIds'] = $val ?: '';
-<<<<<<< HEAD
-            if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'testtyer_bot';
+            if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'Primora444_bot';
         }
 
         $joadminMultiplier = getJoadminMultiplier();
@@ -82,9 +77,6 @@ if ($route === '/app/settings') {
             $settings['rateMultiplier'] = $pMult * $joadminMultiplier;
         } else {
             $settings['rateMultiplier'] = $pMult * ($joadminMultiplier / 55.0);
-=======
-            if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'Primora444_bot';
->>>>>>> ae06648f8b4bc1ddb7539a2533d1dd9d9c0f7fb4
         }
         
         echo json_encode($settings);
@@ -97,11 +89,7 @@ if ($route === '/app/settings') {
             'userCanOrder' => true,
             'marqueeText' => '',
             'topServicesIds' => '',
-<<<<<<< HEAD
-            'botUsername' => 'testtyer_bot'
-=======
             'botUsername' => 'Primora444_bot'
->>>>>>> ae06648f8b4bc1ddb7539a2533d1dd9d9c0f7fb4
         ]);
     }
     exit;

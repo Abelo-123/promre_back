@@ -251,36 +251,13 @@ if ($route === '/services') {
             $reqIds = array_map('intval', explode(',', $requestData['ids']));
         }
         
-<<<<<<< HEAD
-        // 1. Get database configs
-<<<<<<< HEAD
-        $rateMultiplier = 400.0;
-=======
-        $primoraMultiplier = 55.0;
->>>>>>> d547677 (sdsdl;l)
-=======
         // 1. Get database configs & joadmin rate multiplier
         $joadminMultiplier = fetchJoadminMultiplier();
         $primoraMultiplier = 1.0;
->>>>>>> ae06648f8b4bc1ddb7539a2533d1dd9d9c0f7fb4
         try {
             $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
-<<<<<<< HEAD
-<<<<<<< HEAD
-            if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 400.0;
-=======
-            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
->>>>>>> d547677 (sdsdl;l)
-        } catch (Exception $e) {}
-
-        $joadminMultiplier = getJoadminMultiplier();
-        if ($primoraMultiplier < 10.0) {
-            $rateMultiplier = $primoraMultiplier * $joadminMultiplier;
-        } else {
-            $rateMultiplier = $primoraMultiplier * ($joadminMultiplier / 55.0);
-=======
             if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
         } catch (Exception $e) {}
 
@@ -289,7 +266,6 @@ if ($route === '/services') {
             $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
         } else {
             $rateMultiplier = ($primoraMultiplier * 225) * ($joadminMultiplier / 55.0);
->>>>>>> ae06648f8b4bc1ddb7539a2533d1dd9d9c0f7fb4
         }
 
         // Custom pricing map
@@ -434,27 +410,19 @@ if ($route === '/services/top') {
         }
 
         // Get multiplier
-<<<<<<< HEAD
-        $rateMultiplier = 400.0;
-=======
-        $primoraMultiplier = 55.0;
->>>>>>> d547677 (sdsdl;l)
+        $joadminMultiplier = fetchJoadminMultiplier();
+        $primoraMultiplier = 1.0;
         try {
             $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
-<<<<<<< HEAD
-            if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 400.0;
-=======
-            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
->>>>>>> d547677 (sdsdl;l)
+            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
         } catch (Exception $e) {}
 
-        $joadminMultiplier = getJoadminMultiplier();
-        if ($primoraMultiplier < 10.0) {
-            $rateMultiplier = $primoraMultiplier * $joadminMultiplier;
+        if (($primoraMultiplier * 225) <= 10.0) {
+            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
         } else {
-            $rateMultiplier = $primoraMultiplier * ($joadminMultiplier / 55.0);
+            $rateMultiplier = ($primoraMultiplier * 225) * ($joadminMultiplier / 55.0);
         }
 
         // Filter and transform

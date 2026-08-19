@@ -359,12 +359,6 @@ if ($route === '/complete-deposit') {
                     (int)$deposit['id']
                 );
 
-<<<<<<< HEAD
-                // Increment total_deposit setting
-                try {
-                    $stmtTot = $pdo->prepare('INSERT INTO settings (setting_key, bot_id, setting_value) VALUES ("total_deposit", :bot_id, :val) ON DUPLICATE KEY UPDATE setting_value = CAST(setting_value AS DECIMAL(10,2)) + :val_up');
-                    $stmtTot->execute(['bot_id' => getCurrentBotId(), 'val' => (string)$verifiedAmount, 'val_up' => $verifiedAmount]);
-=======
                 // Increment total_deposit setting safely
                 try {
                     $cBotId = getCurrentBotId();
@@ -384,7 +378,6 @@ if ($route === '/complete-deposit') {
                         $stmtTot = $pdo->prepare("INSERT INTO settings (setting_key, bot_id, setting_value) VALUES ('total_deposit', :bot_id, :val)");
                         $stmtTot->execute(['bot_id' => $cBotId, 'val' => (string)$newTotal]);
                     }
->>>>>>> ae06648f8b4bc1ddb7539a2533d1dd9d9c0f7fb4
                 } catch (Exception $totErr) {}
                 
                 $pdo->commit();
