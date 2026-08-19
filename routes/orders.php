@@ -1,6 +1,6 @@
 <?php
 /**
- * Orders Management Routes
+ * Orders dManagement Routes
  */
 
 require_once __DIR__ . '/../config.php';
@@ -158,20 +158,18 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get rates fmultiplier (combined Primora * joadmin)
-        $primoraMultiplier = 55.0;
-        try {
-            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
-            $stmt->execute(['bot_id' => getCurrentBotId()]);
-            $row = $stmt->fetch();
-            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
-        } catch (Exception $e) {}
-
+        // 1. Get combined rate multiplier
         $joadminMultiplier = getJoadminMultiplier();
-        if ($primoraMultiplier < 10.0) {
-            $rateMultiplier = $primoraMultiplier * $joadminMultiplier;
+        $primoraMultiplier = 1.0;
+        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
+        $stmt->execute(['bot_id' => getCurrentBotId()]);
+        $row = $stmt->fetch();
+        if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
+
+        if (($primoraMultiplier * 225) <= 10.0) {
+            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
         } else {
-            $rateMultiplier = $primoraMultiplier * ($joadminMultiplier / 55.0);
+            $rateMultiplier = ($primoraMultiplier * 225) * ($joadminMultiplier / 55.0);
         }
 
         // 2. Lock user auth row to prevent race conditions
@@ -229,7 +227,7 @@ if ($route === '/orders/place') {
             }
         }
 
-        $totalCostEtb = (float)number_format($finalRateEtb * ($quantity / 1000), 2, '.', '');
+        $totalCostEtb = max(0.01, (float)number_format($finalRateEtb * ($quantity / 1000), 2, '.', ''));
 
         if ((float)$user['balance'] < $totalCostEtb) {
             $pdo->rollBack();
@@ -237,6 +235,22 @@ if ($route === '/orders/place') {
                 'success' => false,
                 'error' => "Insufficient wallet balance. You have " . number_format((float)$user['balance'], 2) . " ETB, but this order costs " . number_format($totalCostEtb, 2) . " ETB."
             ]);
+            exit;
+        }
+
+        // Calculate wholesale reseller cost (cost to Primora based on Joadmin multiplier)
+        $resellerCostEtb = max(0.01, (float)number_format(($unitRateUsd * $joadminMultiplier) * ($quantity / 1000), 2, '.', ''));
+
+        // Fetch reseller_balance from settings using getCurrentBotId()
+        $botId = getCurrentBotId();
+        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id LIMIT 1");
+        $stmt->execute(['bot_id' => $botId]);
+        $resellerRow = $stmt->fetch();
+        $resellerBalance = $resellerRow ? (float)$resellerRow['setting_value'] : 0.0;
+
+        if ($resellerBalance < $resellerCostEtb) {
+            $pdo->rollBack();
+            echo json_encode(['success' => false, 'error' => 'Insufficient reseller balance on admin panel. Please contact admin.']);
             exit;
         }
 
@@ -291,27 +305,39 @@ if ($route === '/orders/place') {
             }
         }
 
-        // 7. Insert Order into DB
+        $dbOrderStatus = $finalOrderStatus ? strtolower(str_replace(' ', '_', $finalOrderStatus)) : 'pending';
+
+        // 7. Insert Order into DB (including reseller_cost column)
         $stmt = $pdo->prepare("
             INSERT INTO orders 
-            (user_id, bot_id, service_id, service_name, link, target_link, quantity, api_order_id, charge, status, created_at) 
-            VALUES (:user_id, :bot_id, :service_id, :service_name, :link, :target_link, :quantity, :api_order_id, :charge, 'pending', NOW())
+            (user_id, bot_id, service_id, service_name, reseller_cost, link, target_link, quantity, api_order_id, charge, status, created_at) 
+            VALUES (:user_id, :bot_id, :service_id, :service_name, :reseller_cost, :link, :target_link, :quantity, :api_order_id, :charge, :status, NOW())
         ");
         $stmt->execute([
-            'user_id'      => $tgId,
-            'bot_id'       => getCurrentBotId(),
-            'service_id'   => $serviceId,
-            'service_name' => $serviceData['name'],
-            'link'         => $link,
-            'target_link'  => $link,
-            'quantity'     => $quantity,
-            'api_order_id' => $providerOrderId,
-            'charge'       => $totalCostEtb
+            'user_id'       => $tgId,
+            'bot_id'        => getCurrentBotId(),
+            'service_id'    => $serviceId,
+            'service_name'  => $serviceData['name'],
+            'reseller_cost' => $resellerCostEtb,
+            'link'          => $link,
+            'target_link'   => $link,
+            'quantity'      => $quantity,
+            'api_order_id'  => $providerOrderId,
+            'charge'        => $totalCostEtb,
+            'status'        => $dbOrderStatus
         ]);
         $dbId = $pdo->lastInsertId();
 
         // 8. Deduct user balance & Log ledger
         $newBalance = processTransaction($tgId, 'order', -$totalCostEtb, "Placed Order #{$dbId}", $pdo, 'order', $dbId);
+
+        // 8.5. Deduct reseller_balance IMMEDIATELY and ATOMICALLY upon successful placement
+        $stmtDeduct = $pdo->prepare("
+            UPDATE settings 
+            SET setting_value = CAST(GREATEST(0.00, CAST(setting_value AS DECIMAL(15,4)) - :cost) AS CHAR) 
+            WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id
+        ");
+        $stmtDeduct->execute(['cost' => $resellerCostEtb, 'bot_id' => $botId]);
 
         $pdo->commit();
 
@@ -383,7 +409,7 @@ if ($route === '/orders/status') {
 
     try {
         $stmt = $pdo->prepare("
-            SELECT id, api_order_id, charge, quantity, status 
+            SELECT id, api_order_id, charge, quantity, status, reseller_cost, bot_id 
             FROM orders 
             WHERE user_id = :user_id AND bot_id = :bot_id AND status IN ('pending', 'in_progress', 'processing')
         ");
@@ -397,8 +423,16 @@ if ($route === '/orders/status') {
 
         $apiOrderIds = [];
         foreach ($activeOrders as $ao) {
-            $apiOrderIds[] = $ao['api_order_id'];
+            if (!empty($ao['api_order_id'])) {
+                $apiOrderIds[] = $ao['api_order_id'];
+            }
         }
+        
+        if (empty($apiOrderIds)) {
+            echo json_encode(['success' => true, 'updated' => []]);
+            exit;
+        }
+        
         $reqOrderIds = implode(',', $apiOrderIds);
 
         // Fetch status map from upstream SMM API
@@ -425,16 +459,22 @@ if ($route === '/orders/status') {
 
                 if ($order['status'] !== $newStatus) {
                     $refundAmt = 0.0;
+                    $resellerRefund = 0.0;
+
                     if (in_array($newStatus, $terminalStatuses)) {
                         $refundAmt = (float)$order['charge'];
+                        $resellerRefund = (float)$order['reseller_cost'];
                     } elseif ($newStatus === 'partial') {
                         $remains = (int)(isset($info['remains']) ? $info['remains'] : 0);
                         $quantity = (int)$order['quantity'];
                         if ($remains > 0 && $quantity > 0) {
-                            $refundAmt = ($remains / $quantity) * (float)$order['charge'];
+                            $ratio = ($remains / $quantity);
+                            $refundAmt = $ratio * (float)$order['charge'];
+                            $resellerRefund = $ratio * (float)$order['reseller_cost'];
                         }
                     }
 
+                    // Process user wallet refund
                     if ($refundAmt > 0) {
                         $pdo->beginTransaction();
                         try {
@@ -442,7 +482,21 @@ if ($route === '/orders/status') {
                             processTransaction($tgId, 'refund', $refundAmt, $refundDescription, $pdo, 'order_refund', $order['id']);
                             $pdo->commit();
                         } catch (Exception $txErr) {
-                            $pdo->rollBack();
+                            if ($pdo->inTransaction()) $pdo->rollBack();
+                        }
+                    }
+
+                    // Process reseller_balance credit back (since reseller_balance was already deducted at order placement)
+                    if ($resellerRefund > 0 && !empty($order['bot_id'])) {
+                        try {
+                            $stmtCredit = $pdo->prepare("
+                                UPDATE settings 
+                                SET setting_value = CAST((CAST(setting_value AS DECIMAL(15,4)) + :ref) AS CHAR) 
+                                WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id
+                            ");
+                            $stmtCredit->execute(['ref' => $resellerRefund, 'bot_id' => $order['bot_id']]);
+                        } catch (Exception $e) {
+                            error_log("RESELLER REFUND CREDIT FAILED FOR BOT " . $order['bot_id'] . ": " . $e->getMessage());
                         }
                     }
                 }
@@ -464,6 +518,116 @@ if ($route === '/orders/status') {
         }
 
         echo json_encode(['success' => true, 'updated' => $updated]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// ─── ROUTE: /orders/sync-all (GET/POST Background Global Cron Sync) ──────
+if ($route === '/orders/sync-all') {
+    try {
+        // Fetch up to 100 pending/processing orders across all bots and users
+        $stmt = $pdo->prepare("
+            SELECT id, api_order_id, charge, quantity, status, reseller_cost, bot_id, user_id 
+            FROM orders 
+            WHERE status IN ('pending', 'in_progress', 'processing') AND api_order_id IS NOT NULL AND api_order_id > 0
+            ORDER BY id ASC
+            LIMIT 100
+        ");
+        $stmt->execute();
+        $activeOrders = $stmt->fetchAll();
+
+        if (count($activeOrders) === 0) {
+            echo json_encode(['success' => true, 'synced_count' => 0, 'updated' => []]);
+            exit;
+        }
+
+        $apiOrderIds = [];
+        foreach ($activeOrders as $ao) {
+            $apiOrderIds[] = $ao['api_order_id'];
+        }
+        $reqOrderIds = implode(',', array_unique($apiOrderIds));
+
+        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+            'key'    => $gopApiKey,
+            'action' => 'status',
+            'orders' => $reqOrderIds
+        ], 30);
+        $statusMap = json_decode($res['body'], true);
+
+        if (!$statusMap || isset($statusMap['error'])) {
+            echo json_encode(['success' => false, 'error' => 'Sync with upstream failed']);
+            exit;
+        }
+
+        $updated = [];
+        $terminalStatuses = ['canceled', 'cancelled', 'refunded', 'fail', 'failed'];
+
+        foreach ($activeOrders as $order) {
+            $providerOrderId = $order['api_order_id'];
+            $info = isset($statusMap[$providerOrderId]) ? $statusMap[$providerOrderId] : null;
+            if ($info && isset($info['status'])) {
+                $newStatus = strtolower(str_replace(' ', '_', $info['status']));
+
+                if ($order['status'] !== $newStatus) {
+                    $refundAmt = 0.0;
+                    $resellerRefund = 0.0;
+
+                    if (in_array($newStatus, $terminalStatuses)) {
+                        $refundAmt = (float)$order['charge'];
+                        $resellerRefund = (float)$order['reseller_cost'];
+                    } elseif ($newStatus === 'partial') {
+                        $remains = (int)(isset($info['remains']) ? $info['remains'] : 0);
+                        $quantity = (int)$order['quantity'];
+                        if ($remains > 0 && $quantity > 0) {
+                            $ratio = ($remains / $quantity);
+                            $refundAmt = $ratio * (float)$order['charge'];
+                            $resellerRefund = $ratio * (float)$order['reseller_cost'];
+                        }
+                    }
+
+                    if ($refundAmt > 0) {
+                        $pdo->beginTransaction();
+                        try {
+                            $refundDescription = ($newStatus === 'partial') ? "Partial Refund for Order #{$order['id']}" : "Refund for Order #{$order['id']}";
+                            processTransaction($order['user_id'], 'refund', $refundAmt, $refundDescription, $pdo, 'order_refund', $order['id']);
+                            $pdo->commit();
+                        } catch (Exception $txErr) {
+                            if ($pdo->inTransaction()) $pdo->rollBack();
+                        }
+                    }
+
+                    if ($resellerRefund > 0 && !empty($order['bot_id'])) {
+                        try {
+                            $stmtCredit = $pdo->prepare("
+                                UPDATE settings 
+                                SET setting_value = CAST((CAST(setting_value AS DECIMAL(15,4)) + :ref) AS CHAR) 
+                                WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id
+                            ");
+                            $stmtCredit->execute(['ref' => $resellerRefund, 'bot_id' => $order['bot_id']]);
+                        } catch (Exception $e) {
+                            error_log("CRON RESELLER REFUND CREDIT FAILED FOR BOT " . $order['bot_id'] . ": " . $e->getMessage());
+                        }
+                    }
+                }
+
+                $stmt = $pdo->prepare('UPDATE orders SET status = :status, start_count = :start, remains = :remains WHERE id = :id');
+                $stmt->execute([
+                    'status' => $newStatus,
+                    'start'  => isset($info['start_count']) ? (int)$info['start_count'] : 0,
+                    'remains' => isset($info['remains']) ? (int)$info['remains'] : 0,
+                    'id'     => $order['id']
+                ]);
+
+                $updated[] = [
+                    'id'     => (int)$order['id'],
+                    'status' => $newStatus
+                ];
+            }
+        }
+
+        echo json_encode(['success' => true, 'synced_count' => count($updated), 'updated' => $updated]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
