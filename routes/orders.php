@@ -158,7 +158,7 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get rates multiplier (combined Primora * joadmin)
+        // 1. Get rates dmultiplier (combined Primora * joadmin)
         $joadminMultiplier = fetchJoadminMultiplier();
         $primoraMultiplier = 55.0;
         try {
