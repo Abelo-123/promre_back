@@ -1,6 +1,6 @@
 <?php
 /**
- * Orders Management Routes
+ * Orders dManagement Routes
  */
 
 require_once __DIR__ . '/../config.php';
