@@ -158,7 +158,8 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get rates fmultiplier (combdined Primora * joadmin)
+        // 1. Get rates multiplier (combined Primora * joadmin)
+        $joadminMultiplier = fetchJoadminMultiplier();
         $primoraMultiplier = 55.0;
         try {
             $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
@@ -239,8 +240,8 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // Calculate wholesale reseller cost (cost to Primora based on Joadmin multiplier)
-        $resellerCostEtb = max(0.01, (float)number_format(($unitRateUsd * $joadminMultiplier) * ($quantity / 1000), 2, '.', ''));
+        // Wholesale reseller cost equals total order charge for the reseller bot
+        $resellerCostEtb = $totalCostEtb;
 
         // Fetch reseller_balance from settings using getCurrentBotId()
         $botId = getCurrentBotId();
