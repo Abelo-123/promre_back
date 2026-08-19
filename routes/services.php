@@ -218,12 +218,20 @@ if ($route === '/services') {
         }
         
         // 1. Get database configs
+<<<<<<< HEAD
+        $rateMultiplier = 400.0;
+=======
         $primoraMultiplier = 55.0;
+>>>>>>> d547677 (sdsdl;l)
         try {
             $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
+<<<<<<< HEAD
+            if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 400.0;
+=======
             if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
+>>>>>>> d547677 (sdsdl;l)
         } catch (Exception $e) {}
 
         $joadminMultiplier = getJoadminMultiplier();
@@ -375,12 +383,20 @@ if ($route === '/services/top') {
         }
 
         // Get multiplier
+<<<<<<< HEAD
+        $rateMultiplier = 400.0;
+=======
         $primoraMultiplier = 55.0;
+>>>>>>> d547677 (sdsdl;l)
         try {
             $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
+<<<<<<< HEAD
+            if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 400.0;
+=======
             if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
+>>>>>>> d547677 (sdsdl;l)
         } catch (Exception $e) {}
 
         $joadminMultiplier = getJoadminMultiplier();
