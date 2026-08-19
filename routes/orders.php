@@ -158,13 +158,14 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get combidned rate multiplier
-        $joadminMultiplier = fetchJoadminMultiplier();
-        $primoraMultiplier = 1.0;
-        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
-        $stmt->execute(['bot_id' => getCurrentBotId()]);
-        $row = $stmt->fetch();
-        if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
+        // 1. Get rates fmultiplier (combdined Primora * joadmin)
+        $primoraMultiplier = 55.0;
+        try {
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
+            $stmt->execute(['bot_id' => getCurrentBotId()]);
+            $row = $stmt->fetch();
+            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
+        } catch (Exception $e) {}
 
         if (($primoraMultiplier * 225) <= 10.0) {
             $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
