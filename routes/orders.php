@@ -158,7 +158,7 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get combined rate multiplier
+        // 1. Get combidned rate multiplier
         $joadminMultiplier = fetchJoadminMultiplier();
         $primoraMultiplier = 1.0;
         $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
