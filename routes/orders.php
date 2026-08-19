@@ -238,8 +238,8 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // Calculate wholesale reseller cost (cost to Primora based on Joadmin multiplier)
-        $resellerCostEtb = max(0.01, (float)number_format(($unitRateUsd * $joadminMultiplier) * ($quantity / 1000), 2, '.', ''));
+        // Wholesale reseller cost equals total order charge for the reseller bot
+        $resellerCostEtb = $totalCostEtb;
 
         // Fetch reseller_balance from settings using getCurrentBotId()
         $botId = getCurrentBotId();
