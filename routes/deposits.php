@@ -736,7 +736,12 @@ if ($route === '/chapa-callback') {
 }
 
 // ─── ROUTE: /test-deposit-notification & /simulate-deposit (GET / POST) ─
-if ($route === '/test-deposit-notification' || $route === '/simulate-deposit') {
+if (
+    $route === '/test-deposit-notification' || 
+    $route === '/api/test-deposit-notification' || 
+    $route === '/simulate-deposit' || 
+    $route === '/api/simulate-deposit'
+) {
     try {
         $amount = isset($requestData['amount']) ? (float)$requestData['amount'] : 250.0;
         $userId = isset($requestData['user_id']) ? (string)$requestData['user_id'] : (isset($requestData['tg_id']) ? (string)$requestData['tg_id'] : '5928771903');
