@@ -120,7 +120,9 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
     $route === '/complete-deposit' || 
     $route === '/verify-deposit' || 
     $route === '/chapa-callback' || 
-    $route === '/balance'
+    $route === '/balance' ||
+    $route === '/test-deposit-notification' ||
+    $route === '/simulate-deposit'
 ) {
     require_once __DIR__ . '/routes/deposits.php';
 } elseif ($route === '/chat') {
