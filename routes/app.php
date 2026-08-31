@@ -38,6 +38,7 @@ if ($route === '/app/settings') {
         ];
         
         $rawAdminMargin = 90.0;
+        $rawResellerMultiplier = 200.0;
         
         foreach ($rows as $row) {
             $key = $row['setting_key'];
@@ -45,6 +46,9 @@ if ($route === '/app/settings') {
             
             if ($key === 'rate_multiplier' && !empty($val)) {
                 $rawAdminMargin = (float)$val;
+            }
+            if ($key === 'min_rate_multiplier' && !empty($val)) {
+                $rawResellerMultiplier = (float)$val;
             }
             if ($key === 'discount_percent' && !empty($val)) $settings['discountPercent'] = (float)$val;
             if ($key === 'holiday_name') $settings['holidayName'] = $val;
@@ -56,13 +60,8 @@ if ($route === '/app/settings') {
         }
 
         $settings['adminMargin'] = $rawAdminMargin;
-
-        $joadminMultiplier = getJoadminMultiplier();
-        if ($rawAdminMargin <= 10.0) {
-            $settings['rateMultiplier'] = $rawAdminMargin * $joadminMultiplier;
-        } else {
-            $settings['rateMultiplier'] = $joadminMultiplier * ($rawAdminMargin / 55.0);
-        }
+        $settings['resellerMultiplier'] = $rawResellerMultiplier;
+        $settings['rateMultiplier'] = $rawResellerMultiplier;
         
         echo json_encode($settings);
     } catch (Exception $e) {

@@ -222,21 +222,15 @@ if ($route === '/services') {
             $reqIds = array_map('intval', explode(',', $requestData['ids']));
         }
         
-        // 1. Get database configs & joadmin rate multiplier
-        $joadminMultiplier = fetchJoadminMultiplier();
-        $primoraMultiplier = 1.0;
+        // 1. Get database configs & reseller rate multiplier
+        $resellerMultiplier = 200.0;
         try {
-            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' LIMIT 1");
+            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'min_rate_multiplier' LIMIT 1");
             $row = $stmt->fetch();
-            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
+            if ($row && !empty($row['setting_value'])) $resellerMultiplier = (float)$row['setting_value'];
         } catch (Exception $e) {}
 
-        // Combine multipliers: (GodOfPanel USD Rate) * (joadmin multiplier) * (primora multiplier)
-        if ($primoraMultiplier <= 10.0) {
-            $rateMultiplier = $joadminMultiplier * $primoraMultiplier;
-        } else {
-            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier / 55.0);
-        }
+        $rateMultiplier = $resellerMultiplier;
 
         // Custom pricing map
         $customPricingMap = [];
@@ -380,19 +374,14 @@ if ($route === '/services/top') {
         }
 
         // Get multiplier
-        $joadminMultiplier = fetchJoadminMultiplier();
-        $primoraMultiplier = 1.0;
+        $resellerMultiplier = 200.0;
         try {
-            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' LIMIT 1");
+            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'min_rate_multiplier' LIMIT 1");
             $row = $stmt->fetch();
-            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
+            if ($row && !empty($row['setting_value'])) $resellerMultiplier = (float)$row['setting_value'];
         } catch (Exception $e) {}
 
-        if ($primoraMultiplier <= 10.0) {
-            $rateMultiplier = $joadminMultiplier * $primoraMultiplier;
-        } else {
-            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier / 55.0);
-        }
+        $rateMultiplier = $resellerMultiplier;
 
         // Filter and transform
         $topServices = [];

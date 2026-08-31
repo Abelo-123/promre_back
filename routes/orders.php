@@ -158,20 +158,15 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get rates dmultiplier (combined Primora * joadmin)
-        $joadminMultiplier = fetchJoadminMultiplier();
-        $primoraMultiplier = 55.0;
+        // 1. Get rates multiplier (reseller min_rate_multiplier from settings)
+        $resellerMultiplier = 200.0;
         try {
-            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' LIMIT 1");
+            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'min_rate_multiplier' LIMIT 1");
             $row = $stmt->fetch();
-            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 55.0;
+            if ($row && !empty($row['setting_value'])) $resellerMultiplier = (float)$row['setting_value'];
         } catch (Exception $e) {}
 
-        if (($primoraMultiplier * 225) <= 10.0) {
-            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
-        } else {
-            $rateMultiplier = ($primoraMultiplier * 225) * ($joadminMultiplier / 55.0);
-        }
+        $rateMultiplier = $resellerMultiplier;
 
         // 2. Lock user auth row to prevent race conditions
         $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id FOR UPDATE');
