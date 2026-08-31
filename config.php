@@ -161,3 +161,66 @@ function curlRequest($method, $url, $headers = [], $body = null, $timeout = 30) 
         'error' => $error
     ];
 }
+
+function getCleanJoadminUrl() {
+    $url = getEnvVar('JOADMIN_SERVER_URL', 'https://padmin121-1.onrender.com');
+    if (strpos($url, 'padmin121.onrender.com') !== false && strpos($url, 'padmin121-1.onrender.com') === false) {
+        $url = str_replace('padmin121.onrender.com', 'padmin121-1.onrender.com', $url);
+    }
+    return rtrim($url, '/');
+}
+
+// Helper to dynamically fetch joadmin's rate multiplier (with local fast cache)
+function getJoadminMultiplier() {
+    static $cachedVal = null;
+    static $cachedTime = 0;
+    
+    $isRefresh = isset($_GET['refresh']);
+    if ($cachedVal !== null && !$isRefresh && (time() - $cachedTime) < 5) {
+        return $cachedVal;
+    }
+    
+    $cacheDir = __DIR__ . '/cache';
+    if (!file_exists($cacheDir)) {
+        @mkdir($cacheDir, 0755, true);
+    }
+    $cacheFile = "{$cacheDir}/cache_joadmin_multiplier.json";
+    
+    if (file_exists($cacheFile) && !$isRefresh) {
+        $cData = json_decode(@file_get_contents($cacheFile), true);
+        if ($cData && isset($cData['time']) && (time() - $cData['time']) < 5 && isset($cData['val'])) {
+            $cachedVal = (float)$cData['val'];
+            $cachedTime = time();
+            return $cachedVal;
+        }
+    }
+    
+    try {
+        $joadminUrl = getCleanJoadminUrl();
+        $res = curlRequest('GET', "{$joadminUrl}/api/admin/reseller/min-multiplier", [], null, 5);
+        if ($res['code'] === 200 && !empty($res['body'])) {
+            $data = json_decode($res['body'], true);
+            $val = 55.0;
+            if (isset($data['joadmin_multiplier'])) $val = (float)$data['joadmin_multiplier'];
+            elseif (isset($data['min_rate_multiplier'])) $val = (float)$data['min_rate_multiplier'];
+            elseif (isset($data['rate_multiplier'])) $val = (float)$data['rate_multiplier'];
+            
+            if ($val > 0) {
+                $cachedVal = $val;
+                $cachedTime = time();
+                @file_put_contents($cacheFile, json_encode(['time' => time(), 'val' => $val]));
+                return $val;
+            }
+        }
+    } catch (Exception $e) {}
+    
+    // Fallback to stale cache if cURL fails
+    if (file_exists($cacheFile)) {
+        $cData = json_decode(@file_get_contents($cacheFile), true);
+        if ($cData && isset($cData['val'])) {
+            return (float)$cData['val'];
+        }
+    }
+    
+    return 55.0; // Default baseline if unreachable
+}

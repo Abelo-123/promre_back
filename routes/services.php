@@ -59,36 +59,7 @@ function setCachedData($key, $payload) {
 
 // Fetch joadmin (paxadmin_bot) multiplier via HTTP API since databases are separate
 function fetchJoadminMultiplier() {
-    global $cacheDir;
-    $cacheFile = "{$cacheDir}/cache_joadmin_mult.json";
-    if (file_exists($cacheFile)) {
-        $data = json_decode(@file_get_contents($cacheFile), true);
-        if ($data && isset($data['time']) && (time() - $data['time']) < 30) {
-            return (float)$data['val'];
-        }
-    }
-
-    $joadminUrl = getEnvVar('JOADMIN_SERVER_URL', 'https://padmin121.onrender.com');
-    $res = curlRequest('GET', "{$joadminUrl}/api/admin/reseller/min-multiplier", [], null, 5);
-    if ($res['code'] === 200 && !empty($res['body'])) {
-        $json = json_decode($res['body'], true);
-        $val = 55.0;
-        if (isset($json['joadmin_multiplier'])) $val = (float)$json['joadmin_multiplier'];
-        elseif (isset($json['rate_multiplier'])) $val = (float)$json['rate_multiplier'];
-        elseif (isset($json['min_rate_multiplier'])) $val = (float)$json['min_rate_multiplier'];
-        
-        if ($val > 0) {
-            @file_put_contents($cacheFile, json_encode(['time' => time(), 'val' => $val]));
-            return $val;
-        }
-    }
-
-    if (file_exists($cacheFile)) {
-        $data = json_decode(@file_get_contents($cacheFile), true);
-        if ($data && isset($data['val'])) return (float)$data['val'];
-    }
-
-    return 55.0;
+    return getJoadminMultiplier();
 }
 
 // Upstream GodOfPanel fetch helper with 3 retries
@@ -262,10 +233,10 @@ if ($route === '/services') {
         } catch (Exception $e) {}
 
         // Combine multipliers: (GodOfPanel USD Rate) * (joadmin multiplier) * (primora multiplier)
-        if (($primoraMultiplier * 225) <= 10.0) {
-            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
+        if ($primoraMultiplier <= 10.0) {
+            $rateMultiplier = $joadminMultiplier * $primoraMultiplier;
         } else {
-            $rateMultiplier = ($primoraMultiplier * 225) * ($joadminMultiplier / 55.0);
+            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier / 55.0);
         }
 
         // Custom pricing map
@@ -410,13 +381,20 @@ if ($route === '/services/top') {
         }
 
         // Get multiplier
-        $rateMultiplier = 55.0;
+        $joadminMultiplier = fetchJoadminMultiplier();
+        $primoraMultiplier = 1.0;
         try {
-            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' AND bot_id = :bot_id");
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'rate_multiplier' ORDER BY (bot_id = :bot_id) DESC LIMIT 1");
             $stmt->execute(['bot_id' => getCurrentBotId()]);
             $row = $stmt->fetch();
-            if ($row) $rateMultiplier = (float)$row['setting_value'] ?: 55.0;
+            if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
         } catch (Exception $e) {}
+
+        if ($primoraMultiplier <= 10.0) {
+            $rateMultiplier = $joadminMultiplier * $primoraMultiplier;
+        } else {
+            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier / 55.0);
+        }
 
         // Filter and transform
         $topServices = [];

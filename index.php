@@ -41,8 +41,13 @@ if (!$route) {
     }
 }
 
-// Clean trailing slashes
+// Clean trailing slashes and normalize /api prefix
 $route = '/' . trim($route, '/');
+if (strpos($route, '/api/') === 0) {
+    $route = substr($route, 4);
+} elseif ($route === '/api') {
+    $route = '/';
+}
 
 // Parse JSON request body
 $rawInput = file_get_contents('php://input');
@@ -120,7 +125,11 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
     $route === '/complete-deposit' || 
     $route === '/verify-deposit' || 
     $route === '/chapa-callback' || 
-    $route === '/balance'
+    $route === '/balance' ||
+    $route === '/test-deposit-notification' ||
+    $route === '/api/test-deposit-notification' ||
+    $route === '/simulate-deposit' ||
+    $route === '/api/simulate-deposit'
 ) {
     require_once __DIR__ . '/routes/deposits.php';
 } elseif ($route === '/chat') {
