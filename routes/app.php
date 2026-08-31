@@ -48,11 +48,12 @@ if ($route === '/app/settings') {
         
         $settings = [
             'rateMultiplier' => 400.0,
+            'adminMargin' => 92.0,
             'discountPercent' => 0.0,
             'holidayName' => '',
             'maintenanceMode' => false,
             'userCanOrder' => true,
-            'marqueeText' => 'Welcome to Paxyo SMM!',
+            'marqueeText' => 'Welcome to Primora SMM!',
             'topServicesIds' => '',
             'botUsername' => 'Primora444_bot'
         ];
@@ -61,7 +62,11 @@ if ($route === '/app/settings') {
             $key = $row['setting_key'];
             $val = $row['setting_value'];
             
-            if ($key === 'rate_multiplier') $settings['rateMultiplier'] = (float)$val ?: 400.0;
+            if ($key === 'rate_multiplier') {
+                $rawVal = (float)$val ?: 92.0;
+                $settings['rateMultiplier'] = $rawVal;
+                $settings['adminMargin'] = $rawVal;
+            }
             if ($key === 'discount_percent') $settings['discountPercent'] = (float)$val ?: 0.0;
             if ($key === 'holiday_name') $settings['holidayName'] = $val;
             if ($key === 'maintenance_mode') $settings['maintenanceMode'] = ($val === '1' || $val === 'true');
