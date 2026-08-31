@@ -22,14 +22,12 @@ if ($route === '/app/log-init-data') {
 // Route: /app/settings (GET)
 if ($route === '/app/settings') {
     try {
-        $curBotId = getCurrentBotId();
-        $stmt = $pdo->prepare('SELECT setting_key, setting_value, bot_id FROM settings ORDER BY (setting_key = "rate_multiplier" AND bot_id = "8958935808") DESC, (bot_id = :bot_id) DESC, (bot_id = "8958935808") DESC');
-        $stmt->execute(['bot_id' => $curBotId]);
+        $stmt = $pdo->query('SELECT setting_key, setting_value FROM settings');
         $rows = $stmt->fetchAll();
         
         $settings = [
             'rateMultiplier' => 1.0,
-            'adminMargin' => 1.0,
+            'adminMargin' => 90.0,
             'discountPercent' => 0.0,
             'holidayName' => '',
             'maintenanceMode' => false,
@@ -39,25 +37,23 @@ if ($route === '/app/settings') {
             'botUsername' => 'Primora444_bot'
         ];
         
-        $rawAdminMargin = 1.0;
+        $rawAdminMargin = 90.0;
         
         foreach ($rows as $row) {
             $key = $row['setting_key'];
             $val = $row['setting_value'];
             
-            if ($key === 'rate_multiplier' && !empty($val) && !isset($settings['_rate_multiplier_set'])) {
+            if ($key === 'rate_multiplier' && !empty($val)) {
                 $rawAdminMargin = (float)$val;
-                $settings['_rate_multiplier_set'] = true;
             }
-            if ($key === 'discount_percent') $settings['discountPercent'] = (float)$val ?: 0.0;
+            if ($key === 'discount_percent' && !empty($val)) $settings['discountPercent'] = (float)$val;
             if ($key === 'holiday_name') $settings['holidayName'] = $val;
             if ($key === 'maintenance_mode') $settings['maintenanceMode'] = ($val === '1' || $val === 'true');
             if ($key === 'user_can_order') $settings['userCanOrder'] = ($val === '1' || $val === 'true');
-            if ($key === 'marquee_text') $settings['marqueeText'] = $val;
-            if ($key === 'top_services_ids') $settings['topServicesIds'] = $val ?: '';
-            if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'Primora444_bot';
+            if ($key === 'marquee_text' && !empty($val)) $settings['marqueeText'] = $val;
+            if ($key === 'top_services_ids' && !empty($val)) $settings['topServicesIds'] = $val;
+            if ($key === 'bot_username' && !empty($val)) $settings['botUsername'] = $val;
         }
-        unset($settings['_rate_multiplier_set']);
 
         $settings['adminMargin'] = $rawAdminMargin;
 
