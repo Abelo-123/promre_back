@@ -22,8 +22,9 @@ if ($route === '/app/log-init-data') {
 // Route: /app/settings (GET)
 if ($route === '/app/settings') {
     try {
-        $stmt = $pdo->prepare('SELECT setting_key, setting_value FROM settings ORDER BY (bot_id = :bot_id) DESC');
-        $stmt->execute(['bot_id' => getCurrentBotId()]);
+        $curBotId = getCurrentBotId();
+        $stmt = $pdo->prepare('SELECT setting_key, setting_value, bot_id FROM settings WHERE bot_id = :bot_id OR bot_id = "8958935808" OR bot_id = "default_bot" ORDER BY (bot_id = :bot_id) DESC, (bot_id = "8958935808") DESC');
+        $stmt->execute(['bot_id' => $curBotId]);
         $rows = $stmt->fetchAll();
         
         if (empty($rows)) {
@@ -36,12 +37,12 @@ if ($route === '/app/settings') {
                     WHERE bot_id = :primary_bot_id
                 ");
                 $copyStmt->execute([
-                    'new_bot_id' => getCurrentBotId(),
+                    'new_bot_id' => $curBotId,
                     'primary_bot_id' => $primaryBotId
                 ]);
                 
                 // Re-fetch
-                $stmt->execute(['bot_id' => getCurrentBotId()]);
+                $stmt->execute(['bot_id' => $curBotId]);
                 $rows = $stmt->fetchAll();
             } catch (Exception $e) {}
         }
@@ -62,10 +63,11 @@ if ($route === '/app/settings') {
             $key = $row['setting_key'];
             $val = $row['setting_value'];
             
-            if ($key === 'rate_multiplier') {
+            if ($key === 'rate_multiplier' && !isset($settings['_rate_multiplier_set'])) {
                 $rawVal = (float)$val ?: 92.0;
                 $settings['rateMultiplier'] = $rawVal;
                 $settings['adminMargin'] = $rawVal;
+                $settings['_rate_multiplier_set'] = true;
             }
             if ($key === 'discount_percent') $settings['discountPercent'] = (float)$val ?: 0.0;
             if ($key === 'holiday_name') $settings['holidayName'] = $val;
@@ -75,6 +77,7 @@ if ($route === '/app/settings') {
             if ($key === 'top_services_ids') $settings['topServicesIds'] = $val ?: '';
             if ($key === 'bot_username') $settings['botUsername'] = $val ?: 'Primora444_bot';
         }
+        unset($settings['_rate_multiplier_set']);
 
         $joadminMultiplier = getJoadminMultiplier();
         $pMult = isset($settings['rateMultiplier']) ? (float)$settings['rateMultiplier'] : 55.0;
