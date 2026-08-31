@@ -45,8 +45,8 @@ if ($route === '/orders/stream') {
     
     // Initial fetch of user's active orders to baseline their state
     try {
-        $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id AND bot_id = :bot_id");
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id");
+        $stmt->execute(['user_id' => $tgId]);
         $orders = $stmt->fetchAll();
         foreach ($orders as $o) {
             $lastOrderStates[(int)$o['id']] = [
@@ -69,8 +69,8 @@ if ($route === '/orders/stream') {
         }
         
         try {
-            $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id AND bot_id = :bot_id");
-            $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+            $stmt = $pdo->prepare("SELECT id, api_order_id, status, start_count, remains FROM orders WHERE user_id = :user_id");
+            $stmt->execute(['user_id' => $tgId]);
             $currentOrders = $stmt->fetchAll();
             
             foreach ($currentOrders as $co) {
@@ -169,8 +169,8 @@ if ($route === '/orders/place') {
         $rateMultiplier = $resellerMultiplier;
 
         // 2. Lock user auth row to prevent race conditions
-        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id FOR UPDATE');
-        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id FOR UPDATE');
+        $stmt->execute(['tg_id' => $tgId]);
         $user = $stmt->fetch();
         if (!$user) {
             $pdo->rollBack();
@@ -200,8 +200,8 @@ if ($route === '/orders/place') {
         }
 
         // 4. Fetch custom pricing configurations
-        $stmt = $pdo->prepare('SELECT custom_rate, profit_margin, is_enabled FROM service_custom WHERE service_id = :service_id AND bot_id = :bot_id');
-        $stmt->execute(['service_id' => $serviceId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT custom_rate, profit_margin, is_enabled FROM service_custom WHERE service_id = :service_id');
+        $stmt->execute(['service_id' => $serviceId]);
         $custom = $stmt->fetch();
         
         if ($custom && (int)$custom['is_enabled'] === 0) {
@@ -237,10 +237,9 @@ if ($route === '/orders/place') {
         // Wholesale reseller cost equals total order charge for the reseller bot
         $resellerCostEtb = $totalCostEtb;
 
-        // Fetch reseller_balance from settings using getCurrentBotId()
-        $botId = getCurrentBotId();
-        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id LIMIT 1");
-        $stmt->execute(['bot_id' => $botId]);
+        // Fetch reseller_balance from settings
+        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' LIMIT 1");
+        $stmt->execute();
         $resellerRow = $stmt->fetch();
         $resellerBalance = $resellerRow ? (float)$resellerRow['setting_value'] : 0.0;
 
@@ -306,12 +305,11 @@ if ($route === '/orders/place') {
         // 7. Insert Order into DB (including reseller_cost column)
         $stmt = $pdo->prepare("
             INSERT INTO orders 
-            (user_id, bot_id, service_id, service_name, reseller_cost, link, target_link, quantity, api_order_id, charge, status, created_at) 
-            VALUES (:user_id, :bot_id, :service_id, :service_name, :reseller_cost, :link, :target_link, :quantity, :api_order_id, :charge, :status, NOW())
+            (user_id, service_id, service_name, reseller_cost, link, target_link, quantity, api_order_id, charge, status, created_at) 
+            VALUES (:user_id, :service_id, :service_name, :reseller_cost, :link, :target_link, :quantity, :api_order_id, :charge, :status, NOW())
         ");
         $stmt->execute([
             'user_id'       => $tgId,
-            'bot_id'        => getCurrentBotId(),
             'service_id'    => $serviceId,
             'service_name'  => $serviceData['name'],
             'reseller_cost' => $resellerCostEtb,
@@ -331,9 +329,9 @@ if ($route === '/orders/place') {
         $stmtDeduct = $pdo->prepare("
             UPDATE settings 
             SET setting_value = CAST(GREATEST(0.00, CAST(setting_value AS DECIMAL(15,4)) - :cost) AS CHAR) 
-            WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id
+            WHERE setting_key = 'reseller_balance'
         ");
-        $stmtDeduct->execute(['cost' => $resellerCostEtb, 'bot_id' => $botId]);
+        $stmtDeduct->execute(['cost' => $resellerCostEtb]);
 
         $pdo->commit();
 
@@ -348,6 +346,215 @@ if ($route === '/orders/place') {
             'order_id'         => (string)$dbId,
             'api_order_id'     => (string)$providerOrderId,
             'new_balance'      => $newBalance,
+            'verified'         => $orderVerified,
+            'provider_status'  => $finalOrderStatus
+        ]);
+
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'System error: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// ─── ROUTE: /orders/list (POST) ───────────────────────────────────────────
+if ($route === '/orders/list') {
+    $tgId = getAuthUserIdFromRequest($requestData);
+    if (!$tgId) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Not authenticated']);
+        exit;
+    }
+    
+    try {
+        $stmt = $pdo->prepare('SELECT * FROM orders WHERE user_id = :user_id ORDER BY created_at DESC LIMIT 100');
+        $stmt->execute(['user_id' => $tgId]);
+        $rows = $stmt->fetchAll();
+        
+        // Ensure numeric formats
+        foreach ($rows as &$r) {
+            $r['id'] = (int)$r['id'];
+            $r['service_id'] = (int)$r['service_id'];
+            $r['api_order_id'] = (int)$r['api_order_id'];
+            $r['quantity'] = (int)$r['quantity'];
+            $r['charge'] = (float)$r['charge'];
+            $r['start_count'] = (int)$r['start_count'];
+            $r['remains'] = (int)$r['remains'];
+        }
+        
+        echo json_encode(['success' => true, 'orders' => $rows]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'orders' => []]);
+    }
+    exit;
+}
+
+// ─── ROUTE: /orders/status (POST Sync check) ──────────────────────────────
+if ($route === '/orders/status') {
+    $tgId = getAuthUserIdFromRequest($requestData);
+    if (!$tgId) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Not authenticated']);
+        exit;
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT id, api_order_id, charge, quantity, status, reseller_cost 
+            FROM orders 
+            WHERE user_id = :user_id AND status IN ('pending', 'in_progress', 'processing')
+        ");
+        $stmt->execute(['user_id' => $tgId]);
+        $activeOrders = $stmt->fetchAll();
+
+        if (count($activeOrders) === 0) {
+            echo json_encode(['success' => true, 'updated' => []]);
+            exit;
+        }
+
+        $apiOrderIds = [];
+        foreach ($activeOrders as $ao) {
+            if (!empty($ao['api_order_id'])) {
+                $apiOrderIds[] = $ao['api_order_id'];
+            }
+        }
+        
+        if (empty($apiOrderIds)) {
+            echo json_encode(['success' => true, 'updated' => []]);
+            exit;
+        }
+        
+        $reqOrderIds = implode(',', $apiOrderIds);
+
+        // Fetch status map from upstream SMM API
+        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+            'key'    => $gopApiKey,
+            'action' => 'status',
+            'orders' => $reqOrderIds
+        ], 20);
+        $statusMap = json_decode($res['body'], true);
+
+        if (!$statusMap || isset($statusMap['error'])) {
+            echo json_encode(['success' => false, 'error' => 'Sync with upstream failed']);
+            exit;
+        }
+
+        $updated = [];
+        $terminalStatuses = ['canceled', 'cancelled', 'refunded', 'fail', 'failed'];
+
+        foreach ($activeOrders as $order) {
+            $providerOrderId = $order['api_order_id'];
+            $info = isset($statusMap[$providerOrderId]) ? $statusMap[$providerOrderId] : null;
+            if ($info && isset($info['status'])) {
+                $newStatus = strtolower(str_replace(' ', '_', $info['status']));
+
+                if ($order['status'] !== $newStatus) {
+                    $refundAmt = 0.0;
+                    $resellerRefund = 0.0;
+
+                    if (in_array($newStatus, $terminalStatuses)) {
+                        $refundAmt = (float)$order['charge'];
+                        $resellerRefund = (float)$order['reseller_cost'];
+                    } elseif ($newStatus === 'partial') {
+                        $remains = (int)(isset($info['remains']) ? $info['remains'] : 0);
+                        $quantity = (int)$order['quantity'];
+                        if ($remains > 0 && $quantity > 0) {
+                            $ratio = ($remains / $quantity);
+                            $refundAmt = $ratio * (float)$order['charge'];
+                            $resellerRefund = $ratio * (float)$order['reseller_cost'];
+                        }
+                    }
+
+                    // Process user wallet refund
+                    if ($refundAmt > 0) {
+                        $pdo->beginTransaction();
+                        try {
+                            $refundDescription = ($newStatus === 'partial') ? "Partial Refund for Order #{$order['id']}" : "Refund for Order #{$order['id']}";
+                            processTransaction($tgId, 'refund', $refundAmt, $refundDescription, $pdo, 'order_refund', $order['id']);
+                            $pdo->commit();
+                        } catch (Exception $txErr) {
+                            if ($pdo->inTransaction()) $pdo->rollBack();
+                        }
+                    }
+
+                    // Process reseller_balance credit back
+                    if ($resellerRefund > 0) {
+                        try {
+                            $stmtCredit = $pdo->prepare("
+                                UPDATE settings 
+                                SET setting_value = CAST((CAST(setting_value AS DECIMAL(15,4)) + :ref) AS CHAR) 
+                                WHERE setting_key = 'reseller_balance'
+                            ");
+                            $stmtCredit->execute(['ref' => $resellerRefund]);
+                        } catch (Exception $e) {
+                            error_log("RESELLER REFUND CREDIT FAILED: " . $e->getMessage());
+                        }
+                    }
+                }
+
+                $stmt = $pdo->prepare('UPDATE orders SET status = :status, start_count = :start, remains = :remains WHERE id = :id');
+                $stmt->execute([
+                    'status' => $newStatus,
+                    'start'  => isset($info['start_count']) ? (int)$info['start_count'] : 0,
+                    'remains' => isset($info['remains']) ? (int)$info['remains'] : 0,
+                    'id'     => $order['id']
+                ]);
+
+                $updated[] = [
+                    'id'     => (int)$order['id'],
+                    'status' => $newStatus
+                ];
+            }
+        }
+
+        echo json_encode(['success' => true, 'updated' => $updated]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// ─── ROUTE: /orders/refill (POST) ─────────────────────────────────────────
+if ($route === '/orders/refill') {
+    $tgId = getAuthUserIdFromRequest($requestData);
+    if (!$tgId) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Not authenticated']);
+        exit;
+    }
+
+    try {
+        $orderId = isset($requestData['order_id']) ? (int)$requestData['order_id'] : 0;
+        
+        $stmt = $pdo->prepare('SELECT api_order_id FROM orders WHERE id = :id AND user_id = :user_id');
+        $stmt->execute(['id' => $orderId, 'user_id' => $tgId]);
+        $order = $stmt->fetch();
+        
+        if (!$order) {
+            echo json_encode(['success' => false, 'message' => 'Order not found']);
+            exit;
+        }
+
+        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+            'key'    => $gopApiKey,
+            'action' => 'refill',
+            'order'  => (string)$order['api_order_id']
+        ], 20);
+        $refillData = json_decode($res['body'], true);
+
+        if ($refillData && isset($refillData['error'])) {
+            echo json_encode(['success' => false, 'message' => $refillData['error']]);
+        } else {
+            echo json_encode(['success' => true, 'message' => 'Refill requested']);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Failed to request refill']);
+    }
+    exit;
+}
             'verified'         => $orderVerified,
             'provider_status'  => $finalOrderStatus
         ]);

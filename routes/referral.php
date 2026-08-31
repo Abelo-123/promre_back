@@ -24,8 +24,8 @@ if ($route === '/referral/apply') {
     
     try {
         // 1. Get current user
-        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
+        $stmt->execute(['tg_id' => $tgId]);
         $currentUser = $stmt->fetch();
         
         if (!$currentUser) {
@@ -46,8 +46,8 @@ if ($route === '/referral/apply') {
         }
         
         // 4. Find referrer
-        $stmt = $pdo->prepare('SELECT * FROM auth WHERE referral_code = :code AND bot_id = :bot_id');
-        $stmt->execute(['code' => $referralCode, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE referral_code = :code');
+        $stmt->execute(['code' => $referralCode]);
         $referrer = $stmt->fetch();
         
         if (!$referrer) {
@@ -68,17 +68,17 @@ if ($route === '/referral/apply') {
         $pdo->beginTransaction();
         try {
             // Bind referred_by to the newly referred user (no balance addition here)
-            $stmt = $pdo->prepare('UPDATE auth SET referred_by = :ref_by WHERE tg_id = :tg_id AND bot_id = :bot_id');
-            $stmt->execute(['ref_by' => $referrer['tg_id'], 'tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+            $stmt = $pdo->prepare('UPDATE auth SET referred_by = :ref_by WHERE tg_id = :tg_id');
+            $stmt->execute(['ref_by' => $referrer['tg_id'], 'tg_id' => $tgId]);
             
             // Add referred user tg_id to refers JSON array on referrer
-            $stmt = $pdo->prepare('UPDATE auth SET refers = :refers WHERE tg_id = :tg_id AND bot_id = :bot_id');
-            $stmt->execute(['refers' => json_encode($refersArray), 'tg_id' => $referrer['tg_id'], 'bot_id' => getCurrentBotId()]);
+            $stmt = $pdo->prepare('UPDATE auth SET refers = :refers WHERE tg_id = :tg_id');
+            $stmt->execute(['refers' => json_encode($refersArray), 'tg_id' => $referrer['tg_id']]);
             
             // Add notification alert for referrer
             $displayName = !empty($currentUser['first_name']) ? $currentUser['first_name'] : (!empty($currentUser['username']) ? $currentUser['username'] : 'Someone');
-            $stmt = $pdo->prepare("INSERT INTO alerts (user_id, bot_id, title, message, type) VALUES (:user_id, :bot_id, 'Referral Success', :msg, 'success')");
-            $stmt->execute(['user_id' => $referrer['tg_id'], 'bot_id' => getCurrentBotId(), 'msg' => "User {$displayName} signed up using your code!"]);
+            $stmt = $pdo->prepare("INSERT INTO alerts (user_id, title, message, type) VALUES (:user_id, 'Referral Success', :msg, 'success')");
+            $stmt->execute(['user_id' => $referrer['tg_id'], 'msg' => "User {$displayName} signed up using your code!"]);
             
             $pdo->commit();
         } catch (Exception $txErr) {
@@ -87,8 +87,8 @@ if ($route === '/referral/apply') {
         }
         
         // Fetch fresh balance
-        $stmt = $pdo->prepare('SELECT balance, referred_by FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-        $stmt->execute(['tg_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT balance, referred_by FROM auth WHERE tg_id = :tg_id');
+        $stmt->execute(['tg_id' => $tgId]);
         $updatedUser = $stmt->fetch();
         
         echo json_encode([
@@ -116,14 +116,14 @@ if ($route === '/referral/stats') {
     
     try {
         // 1. Get total commission earned
-        $stmt = $pdo->prepare("SELECT SUM(amount) as total FROM transactions WHERE user_id = :user_id AND bot_id = :bot_id AND type = 'referral_commission'");
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare("SELECT SUM(amount) as total FROM transactions WHERE user_id = :user_id AND type = 'referral_commission'");
+        $stmt->execute(['user_id' => $tgId]);
         $row = $stmt->fetch();
         $totalEarned = $row && $row['total'] ? (float)$row['total'] : 0.0;
         
         // 2. Fetch referred users list
-        $stmt = $pdo->prepare('SELECT tg_id, username, first_name, last_name, last_login FROM auth WHERE referred_by = :user_id AND bot_id = :bot_id');
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT tg_id, username, first_name, last_name, last_login FROM auth WHERE referred_by = :user_id');
+        $stmt->execute(['user_id' => $tgId]);
         $referredUsers = $stmt->fetchAll();
         
         $referredList = [];
@@ -131,8 +131,8 @@ if ($route === '/referral/stats') {
             $refId = $u['tg_id'];
             
             // Get count of deposits made by this user
-            $stmt = $pdo->prepare("SELECT COUNT(*) as cnt FROM transactions WHERE user_id = :user_id AND bot_id = :bot_id AND type = 'deposit'");
-            $stmt->execute(['user_id' => $refId, 'bot_id' => getCurrentBotId()]);
+            $stmt = $pdo->prepare("SELECT COUNT(*) as cnt FROM transactions WHERE user_id = :user_id AND type = 'deposit'");
+            $stmt->execute(['user_id' => $refId]);
             $depRow = $stmt->fetch();
             $depositCount = $depRow ? (int)$depRow['cnt'] : 0;
             
@@ -140,9 +140,9 @@ if ($route === '/referral/stats') {
             $stmt = $pdo->prepare("
                 SELECT SUM(amount) as total 
                 FROM transactions 
-                WHERE user_id = :user_id AND bot_id = :bot_id AND type = 'referral_commission' AND reference_type = 'referral_user' AND reference_id = :ref_id
+                WHERE user_id = :user_id AND type = 'referral_commission' AND reference_type = 'referral_user' AND reference_id = :ref_id
             ");
-            $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId(), 'ref_id' => $refId]);
+            $stmt->execute(['user_id' => $tgId, 'ref_id' => $refId]);
             $commRow = $stmt->fetch();
             $commissionFromUser = $commRow && $commRow['total'] ? (float)$commRow['total'] : 0.0;
             

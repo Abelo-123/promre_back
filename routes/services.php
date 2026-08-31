@@ -235,8 +235,8 @@ if ($route === '/services') {
         // Custom pricing map
         $customPricingMap = [];
         try {
-            $stmt = $pdo->prepare('SELECT service_id, custom_rate, profit_margin, is_enabled FROM service_custom WHERE bot_id = :bot_id');
-            $stmt->execute(['bot_id' => getCurrentBotId()]);
+            $stmt = $pdo->prepare('SELECT service_id, custom_rate, profit_margin, is_enabled FROM service_custom');
+            $stmt->execute();
             $customRows = $stmt->fetchAll();
             foreach ($customRows as $row) {
                 $customPricingMap[(int)$row['service_id']] = [
