@@ -111,8 +111,8 @@ if ($botToken && strpos($botToken, ':') !== false) {
         $botTokens[$primaryBotId] = $botToken;
     }
 } else {
-    $primaryBotId = '8671087034';
-    $botToken = '8671087034:AAH75-nIpyl1xUlkOO9PCnHE875Zn41P9CE';
+    $primaryBotId = '8958935808';
+    $botToken = '8958935808:AAHIKPlmSFX5YhSMvIQuTUba9QC6QUes5xk';
     if (!isset($botTokens[$primaryBotId])) {
         $botTokens[$primaryBotId] = $botToken;
     }
