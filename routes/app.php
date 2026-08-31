@@ -28,8 +28,8 @@ if ($route === '/app/settings') {
         $rows = $stmt->fetchAll();
         
         $settings = [
-            'rateMultiplier' => 400.0,
-            'adminMargin' => 92.0,
+            'rateMultiplier' => 1.0,
+            'adminMargin' => 1.0,
             'discountPercent' => 0.0,
             'holidayName' => '',
             'maintenanceMode' => false,
@@ -39,14 +39,14 @@ if ($route === '/app/settings') {
             'botUsername' => 'Primora444_bot'
         ];
         
-        $rawAdminMargin = 92.0;
+        $rawAdminMargin = 1.0;
         
         foreach ($rows as $row) {
             $key = $row['setting_key'];
             $val = $row['setting_value'];
             
             if ($key === 'rate_multiplier' && !empty($val) && !isset($settings['_rate_multiplier_set'])) {
-                $rawAdminMargin = (float)$val ?: 92.0;
+                $rawAdminMargin = (float)$val;
                 $settings['_rate_multiplier_set'] = true;
             }
             if ($key === 'discount_percent') $settings['discountPercent'] = (float)$val ?: 0.0;
