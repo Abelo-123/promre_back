@@ -39,14 +39,14 @@ if ($route === '/app/settings') {
             'botUsername' => 'Primora444_bot'
         ];
         
+        $rawAdminMargin = 92.0;
+        
         foreach ($rows as $row) {
             $key = $row['setting_key'];
             $val = $row['setting_value'];
             
             if ($key === 'rate_multiplier' && !empty($val) && !isset($settings['_rate_multiplier_set'])) {
-                $rawVal = (float)$val ?: 92.0;
-                $settings['rateMultiplier'] = $rawVal;
-                $settings['adminMargin'] = $rawVal;
+                $rawAdminMargin = (float)$val ?: 92.0;
                 $settings['_rate_multiplier_set'] = true;
             }
             if ($key === 'discount_percent') $settings['discountPercent'] = (float)$val ?: 0.0;
@@ -59,12 +59,13 @@ if ($route === '/app/settings') {
         }
         unset($settings['_rate_multiplier_set']);
 
+        $settings['adminMargin'] = $rawAdminMargin;
+
         $joadminMultiplier = getJoadminMultiplier();
-        $pMult = isset($settings['adminMargin']) ? (float)$settings['adminMargin'] : 92.0;
-        if ($pMult <= 10.0) {
-            $settings['rateMultiplier'] = $pMult * $joadminMultiplier;
+        if ($rawAdminMargin <= 10.0) {
+            $settings['rateMultiplier'] = $rawAdminMargin * $joadminMultiplier;
         } else {
-            $settings['rateMultiplier'] = $joadminMultiplier * ($pMult / 55.0);
+            $settings['rateMultiplier'] = $joadminMultiplier * ($rawAdminMargin / 55.0);
         }
         
         echo json_encode($settings);
