@@ -23,29 +23,9 @@ if ($route === '/app/log-init-data') {
 if ($route === '/app/settings') {
     try {
         $curBotId = getCurrentBotId();
-        $stmt = $pdo->prepare('SELECT setting_key, setting_value, bot_id FROM settings WHERE bot_id = :bot_id OR bot_id = "8958935808" OR bot_id = "default_bot" ORDER BY (bot_id = :bot_id) DESC, (bot_id = "8958935808") DESC');
+        $stmt = $pdo->prepare('SELECT setting_key, setting_value, bot_id FROM settings ORDER BY (setting_key = "rate_multiplier" AND bot_id = "8958935808") DESC, (bot_id = :bot_id) DESC, (bot_id = "8958935808") DESC');
         $stmt->execute(['bot_id' => $curBotId]);
         $rows = $stmt->fetchAll();
-        
-        if (empty($rows)) {
-            // Auto-seed for this bot by copying primary bot settings
-            try {
-                $copyStmt = $pdo->prepare("
-                    INSERT INTO settings (setting_key, bot_id, setting_value)
-                    SELECT setting_key, :new_bot_id, setting_value 
-                    FROM settings 
-                    WHERE bot_id = :primary_bot_id
-                ");
-                $copyStmt->execute([
-                    'new_bot_id' => $curBotId,
-                    'primary_bot_id' => $primaryBotId
-                ]);
-                
-                // Re-fetch
-                $stmt->execute(['bot_id' => $curBotId]);
-                $rows = $stmt->fetchAll();
-            } catch (Exception $e) {}
-        }
         
         $settings = [
             'rateMultiplier' => 400.0,
@@ -63,7 +43,7 @@ if ($route === '/app/settings') {
             $key = $row['setting_key'];
             $val = $row['setting_value'];
             
-            if ($key === 'rate_multiplier' && !isset($settings['_rate_multiplier_set'])) {
+            if ($key === 'rate_multiplier' && !empty($val) && !isset($settings['_rate_multiplier_set'])) {
                 $rawVal = (float)$val ?: 92.0;
                 $settings['rateMultiplier'] = $rawVal;
                 $settings['adminMargin'] = $rawVal;
@@ -80,7 +60,7 @@ if ($route === '/app/settings') {
         unset($settings['_rate_multiplier_set']);
 
         $joadminMultiplier = getJoadminMultiplier();
-        $pMult = isset($settings['rateMultiplier']) ? (float)$settings['rateMultiplier'] : 55.0;
+        $pMult = isset($settings['adminMargin']) ? (float)$settings['adminMargin'] : 92.0;
         if ($pMult <= 10.0) {
             $settings['rateMultiplier'] = $pMult * $joadminMultiplier;
         } else {
