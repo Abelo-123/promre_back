@@ -7,31 +7,7 @@ require_once __DIR__ . '/config.php';
 
 function getCurrentBotId($requestBotId = null) {
     global $primaryBotId;
-    if ($requestBotId) {
-        return $requestBotId;
-    }
-    
-    if (session_status() === PHP_SESSION_NONE) {
-        @session_start();
-    }
-    if (isset($_SESSION['bot_id']) && !empty($_SESSION['bot_id'])) {
-        return $_SESSION['bot_id'];
-    }
-    
-    global $requestData;
-    if (isset($requestData['bot_id']) && !empty($requestData['bot_id'])) {
-        return $requestData['bot_id'];
-    }
-    
-    if (isset($_GET['bot_id']) && !empty($_GET['bot_id'])) {
-        return $_GET['bot_id'];
-    }
-    
-    if (isset($_SERVER['HTTP_X_BOT_ID']) && !empty($_SERVER['HTTP_X_BOT_ID'])) {
-        return $_SERVER['HTTP_X_BOT_ID'];
-    }
-    
-    return $primaryBotId;
+    return $primaryBotId ?: '8958935808';
 }
 
 function getTelegramUser($initData) {
