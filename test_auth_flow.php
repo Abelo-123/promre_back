@@ -76,7 +76,11 @@ $steps[] = [
 ];
 
 if ($steps[1]['status'] === 'success') {
+    $botId = getCurrentBotId();
     $paxyoBotUrl = 'https://abiybot34.onrender.com/api/sendToJohn';
+    if ($botId === '8998482898' || $botId === '8958935808') {
+        $paxyoBotUrl = 'https://pax-bot121-1.onrender.com/api/sendToJohn';
+    }
     $payload = ['type' => 'newuser', 'uid' => $tgId, 'uuid' => $firstName];
     
     $res = curlRequest('POST', $paxyoBotUrl, ['Content-Type: application/json'], json_encode($payload), 8);

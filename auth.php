@@ -1,6 +1,6 @@
 <?php
 /**
- * Telpegdddram signature validation utility
+ * Telegram signature validation utility
  */
 
 require_once __DIR__ . '/config.php';

@@ -30,6 +30,9 @@ function chapaInitializePayment($data) {
         'tx_ref'        => $data['tx_ref'],
         'callback_url'  => $callbackUrl,
         'return_url'    => $returnUrl,
+        'meta'          => [
+            'hide_receipt' => true
+        ],
         'customization' => [
             'title'       => 'Paxyo Deposit',
             'description' => 'Wallet deposit'
@@ -39,6 +42,9 @@ function chapaInitializePayment($data) {
         ]
     ];
     
+    // Log payload for debugging
+    file_put_contents(__DIR__ . '/../chapa_payload.log', "[" . date('Y-m-d H:i:s') . "] URL: {$chapaBaseUrl}/transaction/initialize\nPayload: " . json_encode($payload, JSON_PRETTY_PRINT) . "\n\n", FILE_APPEND);
+
     $res = curlRequest('POST', "{$chapaBaseUrl}/transaction/initialize", [
         "Authorization: Bearer {$chapaSecretKey}",
         "Content-Type: application/json"
@@ -728,3 +734,100 @@ if ($route === '/chapa-callback') {
     }
     exit;
 }
+
+// ─── ROUTE: /test-deposit-notification & /simulate-deposit (GET / POST) ─
+if (
+    $route === '/test-deposit-notification' || 
+    $route === '/api/test-deposit-notification' || 
+    $route === '/simulate-deposit' || 
+    $route === '/api/simulate-deposit'
+) {
+    try {
+        $amount = isset($requestData['amount']) ? (float)$requestData['amount'] : 250.0;
+        $userId = isset($requestData['user_id']) ? (string)$requestData['user_id'] : (isset($requestData['tg_id']) ? (string)$requestData['tg_id'] : '5928771903');
+        $firstName = isset($requestData['first_name']) ? (string)$requestData['first_name'] : (isset($requestData['name']) ? (string)$requestData['name'] : 'RealUserSim');
+        $botId = getCurrentBotId();
+
+        $txRef = "DEP-SIM-" . time() . "-" . bin2hex(random_bytes(3));
+        $chapaRef = "CHAPA-SIM-" . time();
+
+        // 1. Find or create user in auth table
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
+        $stmt->execute(['tg_id' => $userId, 'bot_id' => $botId]);
+        $user = $stmt->fetch();
+
+        if (!$user) {
+            $stmt = $pdo->prepare("INSERT INTO auth (tg_id, bot_id, first_name, balance, auth_provider, last_login) VALUES (:tg_id, :bot_id, :first_name, 0.00, 'telegram', NOW())");
+            $stmt->execute(['tg_id' => $userId, 'bot_id' => $botId, 'first_name' => $firstName]);
+        } elseif (!empty($firstName) && $user['first_name'] !== $firstName) {
+            $stmt = $pdo->prepare("UPDATE auth SET first_name = :first_name WHERE tg_id = :tg_id AND bot_id = :bot_id");
+            $stmt->execute(['first_name' => $firstName, 'tg_id' => $userId, 'bot_id' => $botId]);
+        }
+
+        // 2. Insert successful test deposit
+        $stmt = $pdo->prepare("INSERT INTO deposits (user_id, bot_id, amount, tx_ref, chapa_tx_ref, status, completed_at) VALUES (:user_id, :bot_id, :amount, :tx_ref, :chapa_ref, 'success', NOW())");
+        $stmt->execute([
+            'user_id'   => $userId,
+            'bot_id'    => $botId,
+            'amount'    => $amount,
+            'tx_ref'    => $txRef,
+            'chapa_ref' => $chapaRef
+        ]);
+        $depositId = $pdo->lastInsertId();
+
+        // 3. Update wallet balance via transaction processor
+        $newBalance = processTransaction(
+            $userId,
+            'deposit',
+            $amount,
+            "Simulated Chapa Deposit - {$txRef}",
+            $pdo,
+            'deposit',
+            (int)$depositId
+        );
+
+        // 4. Update total_deposit in settings
+        try {
+            $stmtGet = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'total_deposit' AND bot_id = :bot_id LIMIT 1");
+            $stmtGet->execute(['bot_id' => $botId]);
+            $currentTotal = (float)($stmtGet->fetchColumn() ?: 0.0);
+            $newTotal = $currentTotal + $amount;
+
+            $stmtCheck = $pdo->prepare("SELECT COUNT(*) FROM settings WHERE setting_key = 'total_deposit' AND bot_id = :bot_id");
+            $stmtCheck->execute(['bot_id' => $botId]);
+            $exists = (int)$stmtCheck->fetchColumn() > 0;
+
+            if ($exists) {
+                $stmtTot = $pdo->prepare("UPDATE settings SET setting_value = :val WHERE setting_key = 'total_deposit' AND bot_id = :bot_id");
+                $stmtTot->execute(['val' => (string)$newTotal, 'bot_id' => $botId]);
+            } else {
+                $stmtTot = $pdo->prepare("INSERT INTO settings (setting_key, bot_id, setting_value) VALUES ('total_deposit', :bot_id, :val)");
+                $stmtTot->execute(['bot_id' => $botId, 'val' => (string)$newTotal]);
+            }
+        } catch (Exception $totErr) {}
+
+        // 5. Trigger Bot Notification Webhook
+        $notifyRes = notifyDeposit($userId, $amount, $firstName);
+
+        echo json_encode([
+            'success'     => true,
+            'simulation'  => true,
+            'message'     => 'Deposit notification simulation triggered successfully!',
+            'details'     => [
+                'tx_ref'       => $txRef,
+                'chapa_ref'    => $chapaRef,
+                'user_id'      => $userId,
+                'first_name'   => $firstName,
+                'amount'       => $amount,
+                'new_balance'  => $newBalance,
+                'bot_id'       => $botId,
+                'notification' => $notifyRes
+            ]
+        ], JSON_PRETTY_PRINT);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+

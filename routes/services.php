@@ -390,10 +390,17 @@ if ($route === '/services/top') {
             if ($row) $primoraMultiplier = (float)$row['setting_value'] ?: 1.0;
         } catch (Exception $e) {}
 
+<<<<<<< HEAD
         if ($primoraMultiplier <= 10.0) {
             $rateMultiplier = $joadminMultiplier * $primoraMultiplier;
         } else {
             $rateMultiplier = $joadminMultiplier * ($primoraMultiplier / 55.0);
+=======
+        if (($primoraMultiplier * 225) <= 10.0) {
+            $rateMultiplier = $joadminMultiplier * ($primoraMultiplier * 225);
+        } else {
+            $rateMultiplier = ($primoraMultiplier * 225) * ($joadminMultiplier / 55.0);
+>>>>>>> 1d16590650b945d5376f277c95bee2dfaa674790
         }
 
         // Filter and transform

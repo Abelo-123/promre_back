@@ -72,7 +72,6 @@ if ($route === '/app/settings') {
         }
 
         $joadminMultiplier = getJoadminMultiplier();
-        $pMult = $settings['rateMultiplier'];
         if ($pMult <= 10.0) {
             $settings['rateMultiplier'] = $pMult * $joadminMultiplier;
         } else {
