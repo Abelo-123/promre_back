@@ -64,7 +64,7 @@ function fetchJoadminMultiplier() {
 
 // Upstream GodOfPanel fetch helper with 3 retries
 function fetchUpstreamServices() {
-    global $gopApiKey;
+    global $gopApiKey, $smmProviderUrl;
     if (empty($gopApiKey)) {
         throw new Exception('GODOFPANEL_API_KEY not configured in backend environment');
     }
