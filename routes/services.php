@@ -71,7 +71,7 @@ function fetchUpstreamServices() {
     
     $lastError = 'Unknown error';
     for ($i = 0; $i < 3; $i++) {
-        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+        $res = curlRequest('POST', $smmProviderUrl, [], [
             'key' => $gopApiKey,
             'action' => 'services'
         ], 30);

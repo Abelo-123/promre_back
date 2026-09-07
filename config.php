@@ -119,6 +119,7 @@ if ($botToken && strpos($botToken, ':') !== false) {
 }
 
 $gopApiKey = getEnvVar('GODOFPANEL_API_KEY');
+$smmProviderUrl = getEnvVar('SMM_PROVIDER_URL', getEnvVar('PROVIDER_API_URL', 'https://justanotherpanel.com/api/v2'));
 $chapaSecretKey = getEnvVar('CHAPA_SECRET_KEY');
 if (!$chapaSecretKey || strpos($chapaSecretKey, 'tEs') !== false || strpos($chapaSecretKey, 'Mg2Kc') !== false) {
     $chapaSecretKey = 'CHASECK-WGUq6JVPIxSmjVSWTebh5UOOcshNscEd';

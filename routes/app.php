@@ -266,7 +266,7 @@ if ($route === '/app/auth') {
         // Fetch GodOfPanel (upstream provider) balance for debugging if API key exists
         if (!empty($gopApiKey)) {
             try {
-                $gopRes = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+                $gopRes = curlRequest('POST', $smmProviderUrl, [], [
                     'key' => $gopApiKey,
                     'action' => 'balance'
                 ], 10);

@@ -178,7 +178,7 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // 3. Fetch specific service from GodOfPanel
+        // 3. Fetch specific service from JustAnotherPanel
         $rawServices = getCachedData('upstream_services', 3600);
         if (!$rawServices) {
             $rawServices = fetchUpstreamServices();
@@ -249,7 +249,7 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // 5. Place order to GodOfPanel API
+        // 5. Place order to JustAnotherPanel API
         $orderParams = [
             'key'      => $gopApiKey,
             'action'   => 'add',
@@ -260,16 +260,16 @@ if ($route === '/orders/place') {
         if (!empty($comments)) $orderParams['comments'] = $comments;
         if ($answerNumber > 0) $orderParams['answer_number'] = (string)$answerNumber;
 
-        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], $orderParams, 30);
+        $res = curlRequest('POST', $smmProviderUrl, [], $orderParams, 30);
         $orderData = json_decode($res['body'], true);
 
         if (!$orderData || isset($orderData['error'])) {
             $pdo->rollBack();
             $providerErr = isset($orderData['error']) ? $orderData['error'] : 'Upstream panel placing order failed';
             
-            // Intercept balance-related upstream errors to clarify that the BOT OWNER needs to top up GodOfPanel
+            // Intercept balance-related upstream errors to clarify that the BOT OWNER needs to top up JustAnotherPanel
             if (stripos($providerErr, 'funds') !== false || stripos($providerErr, 'balance') !== false) {
-                $providerErr = "Provider Error: {$providerErr}. (Admin: Please deposit funds to your GodOfPanel account)";
+                $providerErr = "Provider Error: {$providerErr}. (Admin: Please deposit funds to your JustAnotherPanel account)";
             }
             
             echo json_encode(['success' => false, 'error' => $providerErr]);
@@ -284,7 +284,7 @@ if ($route === '/orders/place') {
         for ($v = 0; $v < 3; $v++) {
             usleep(500000); // Wait 0.5s
             
-            $chkRes = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+            $chkRes = curlRequest('POST', $smmProviderUrl, [], [
                 'key'    => $gopApiKey,
                 'action' => 'status',
                 'order'  => (string)$providerOrderId
@@ -338,7 +338,7 @@ if ($route === '/orders/place') {
         // 9. Webhook Notification
         try {
             $displayName = !empty($user['username']) ? $user['username'] : (!empty($user['first_name']) ? $user['first_name'] : 'User');
-            notifyNewOrder($tgId, $displayName, $serviceData['name'], (string)$dbId, (string)$totalCostEtb, 'GodOfPanel', (string)$user['balance']);
+            notifyNewOrder($tgId, $displayName, $serviceData['name'], (string)$dbId, (string)$totalCostEtb, 'JustAnotherPanel', (string)$user['balance']);
         } catch (Exception $e) {}
 
         echo json_encode([
@@ -430,7 +430,7 @@ if ($route === '/orders/status') {
         $reqOrderIds = implode(',', $apiOrderIds);
 
         // Fetch status map from upstream SMM API
-        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+        $res = curlRequest('POST', $smmProviderUrl, [], [
             'key'    => $gopApiKey,
             'action' => 'status',
             'orders' => $reqOrderIds
@@ -538,7 +538,7 @@ if ($route === '/orders/refill') {
             exit;
         }
 
-        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+        $res = curlRequest('POST', $smmProviderUrl, [], [
             'key'    => $gopApiKey,
             'action' => 'refill',
             'order'  => (string)$order['api_order_id']
@@ -639,7 +639,7 @@ if ($route === '/orders/status') {
         $reqOrderIds = implode(',', $apiOrderIds);
 
         // Fetch status map from upstream SMM API
-        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+        $res = curlRequest('POST', $smmProviderUrl, [], [
             'key'    => $gopApiKey,
             'action' => 'status',
             'orders' => $reqOrderIds
@@ -752,7 +752,7 @@ if ($route === '/orders/sync-all') {
         }
         $reqOrderIds = implode(',', array_unique($apiOrderIds));
 
-        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+        $res = curlRequest('POST', $smmProviderUrl, [], [
             'key'    => $gopApiKey,
             'action' => 'status',
             'orders' => $reqOrderIds
@@ -858,7 +858,7 @@ if ($route === '/orders/refill') {
             exit;
         }
 
-        $res = curlRequest('POST', 'https://godofpanel.com/api/v2', [], [
+        $res = curlRequest('POST', $smmProviderUrl, [], [
             'key'    => $gopApiKey,
             'action' => 'refill',
             'order'  => (string)$order['api_order_id']
