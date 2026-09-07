@@ -555,19 +555,6 @@ if ($route === '/orders/refill') {
     }
     exit;
 }
-            'verified'         => $orderVerified,
-            'provider_status'  => $finalOrderStatus
-        ]);
-
-    } catch (Exception $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'System error: ' . $e->getMessage()]);
-    }
-    exit;
-}
 
 // ─── ROUTE: /orders/list (POST) ───────────────────────────────────────────
 if ($route === '/orders/list') {
