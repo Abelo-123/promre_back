@@ -3,8 +3,8 @@
  * JustAnotherPanel Average Time Scraper & Real-Time SWR Module
  * 
  * Independently fetches, caches, and serves live service average_time metrics
- * from JustAnotherPanel (JAP.com) with robust CSRF session authentication,
- * key-preserving multi-strategy parsing, and non-blocking SWR background sync.
+ * from JustAnotherPanel (JAP.com) with window.modules.site.services JSON parsing,
+ * robust CSRF session authentication, key-preserving multi-strategy parsing, and SWR sync.
  */
 
 require_once __DIR__ . '/config.php';
@@ -12,6 +12,7 @@ require_once __DIR__ . '/config.php';
 /**
  * Key-preserving associative merge helper for service maps.
  * Guarantees numeric service IDs (e.g. "8651") are preserved without PHP array_merge key reindexing.
+ * Later map arguments overwrite earlier ones.
  */
 function mergeServiceMaps(...$maps) {
     $result = [];
@@ -103,29 +104,44 @@ function fetchJapPage($url, $postData = null, $cookieJar = null) {
 }
 
 /**
- * Extract { service_id => average_time } map from HTML/JS payload using multiple resilient strategies
+ * Extract { service_id => average_time } map from HTML/JS payload
  */
 function parseAverageTimesFromContent($htmlContent) {
     $serviceMap = [];
     if (empty($htmlContent)) return $serviceMap;
 
-    // Strategy 1: Parse window.modules.site.services or embedded JS objects
+    // Strategy 1: Direct window.modules.site.services or site.services JSON Array Parsing
+    if (preg_match('/(?:window\.)?(?:modules\.)?(?:site\.)?services\s*=\s*(\[\s*\{.*?\}\s*\]);\s*/s', $htmlContent, $arrMatch) ||
+        preg_match('/var\s+services\s*=\s*(\[\s*\{.*?\}\s*\]);\s*/s', $htmlContent, $arrMatch)) {
+        $decoded = json_decode($arrMatch[1], true);
+        if (is_array($decoded)) {
+            foreach ($decoded as $item) {
+                if (is_array($item)) {
+                    $id = isset($item['id']) ? $item['id'] : (isset($item['service']) ? $item['service'] : null);
+                    $avg = isset($item['average_time']) ? $item['average_time'] : (isset($item['averageTime']) ? $item['averageTime'] : null);
+                    if ($id !== null && $avg !== null && trim((string)$avg) !== '') {
+                        $serviceMap[(string)$id] = trim((string)$avg);
+                    }
+                }
+            }
+        }
+    }
+
+    // Strategy 2: Parse individual JSON service objects: "id": 8651, ... "average_time": "5 hours"
     if (preg_match_all('/"(?:id|service)"\s*:\s*"?(\d{2,8})"?\s*,[^{}]*?"average_time"\s*:\s*"([^"]+)"/s', $htmlContent, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
             $serviceMap[(string)$m[1]] = trim($m[2]);
         }
     }
 
-    // Strategy 2: Nested-brace tolerant JSON object regex
-    // Matches "8651": { ... "average_time": "5 hours" ... } handling sub-objects
+    // Strategy 3: Nested-brace tolerant JSON object regex: "8651": { ... "average_time": "5 hours" }
     if (preg_match_all('/"(\d{2,8})"\s*:\s*\{(?:[^{}]|\{[^{}]*\}|\{[^{}]*\{[^{}]*\}*\})*?"average_time"\s*:\s*"([^"]+)"/s', $htmlContent, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
             $serviceMap[(string)$m[1]] = trim($m[2]);
         }
     }
 
-    // Strategy 3: Proximity backward-search parsing
-    // Finds all "average_time": "VALUE" and looks backwards for the nearest preceding service ID
+    // Strategy 4: Proximity backward-search parsing
     if (preg_match_all('/"average_time"\s*:\s*"([^"]+)"/s', $htmlContent, $timeMatches, PREG_OFFSET_CAPTURE)) {
         foreach ($timeMatches as $tm) {
             $timeVal = trim($tm[0][0]);
@@ -136,7 +152,6 @@ function parseAverageTimesFromContent($htmlContent) {
             $chunkStart = max(0, $offset - 1500);
             $chunk = substr($htmlContent, $chunkStart, $offset - $chunkStart);
 
-            // Search backward for service ID patterns
             if (preg_match_all('/(?:"id"\s*:\s*"?(\d{2,8})"?|"service"\s*:\s*"?(\d{2,8})"?|"(\d{2,8})"\s*:\s*\{|data-id="(\d{2,8})"|service-(\d{2,8}))/s', $chunk, $idMatches, PREG_SET_ORDER)) {
                 $lastMatch = end($idMatches);
                 $id = !empty($lastMatch[1]) ? $lastMatch[1] :
@@ -151,7 +166,7 @@ function parseAverageTimesFromContent($htmlContent) {
         }
     }
 
-    // Strategy 4: HTML Table & Data Attributes Parser
+    // Strategy 5: HTML Table & Data Attributes Parser
     if (preg_match_all('/<tr[^>]*?(?:data-id="(\d+)"|id="service-(\d+)")[^>]*?>.*?average_time[^>]*?>([^<]+)</si', $htmlContent, $trMatches, PREG_SET_ORDER)) {
         foreach ($trMatches as $m) {
             $id = !empty($m[1]) ? $m[1] : $m[2];
@@ -183,7 +198,6 @@ function scrapeJapAverageTimes() {
         $csrf = extractCsrfToken($landingHtml);
 
         if (!$csrf) {
-            // Try fetching /login page if landing didn't provide CSRF token
             $loginFormHtml = fetchJapPage($baseUrl . '/login', null, $tempCookieFile);
             $csrf = extractCsrfToken($loginFormHtml);
         }
@@ -203,7 +217,6 @@ function scrapeJapAverageTimes() {
 
             $res = fetchJapPage($baseUrl . '/login', $payload, $tempCookieFile);
             if (empty($res) || strpos($res, 'LoginForm') !== false) {
-                // Try posting directly to /
                 $res = fetchJapPage($baseUrl . '/', $payload, $tempCookieFile);
             }
 
@@ -213,10 +226,10 @@ function scrapeJapAverageTimes() {
             }
         }
 
-        // Step 3: Fetch post-login dashboard and /neworder targets
-        $newOrderHtml = fetchJapPage($baseUrl . '/neworder', null, $tempCookieFile);
+        // Step 3: Fetch public services page and authenticated dashboard targets
+        $servicesHtml  = fetchJapPage($baseUrl . '/services', null, $tempCookieFile);
         $dashboardHtml = fetchJapPage($baseUrl . '/', null, $tempCookieFile);
-        $servicesHtml = fetchJapPage($baseUrl . '/services', null, $tempCookieFile);
+        $newOrderHtml  = fetchJapPage($baseUrl . '/neworder', null, $tempCookieFile);
 
         // Step 4: Extract maps from all targets
         $mapLanding  = parseAverageTimesFromContent($landingHtml);
@@ -225,7 +238,7 @@ function scrapeJapAverageTimes() {
         $mapDash     = parseAverageTimesFromContent($dashboardHtml);
         $mapNewOrder = parseAverageTimesFromContent($newOrderHtml);
 
-        // Step 5: Merge using key-preserving helper (authenticated targets have highest precedence)
+        // Step 5: Merge maps in strict precedence: logged-in /neworder and dashboard overwrite static public catalog
         $mergedMap = mergeServiceMaps($mapLanding, $mapServices, $mapAuth, $mapDash, $mapNewOrder);
 
         @unlink($tempCookieFile);
@@ -297,7 +310,7 @@ function getAverageTimes($forceRefresh = false) {
     $freshMap = scrapeJapAverageTimes();
 
     if (!empty($freshMap)) {
-        // Key-preserving incremental merge
+        // Key-preserving incremental merge: fresh live data overwrites existing cache
         $finalMap = mergeServiceMaps($existingCachedMap, $freshMap);
         file_put_contents($cacheFile, json_encode($finalMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         return $finalMap;
