@@ -1,6 +1,6 @@
 <?php
 /**
- * Standalone Test Script for JAP Average Time Scraper
+ * Standalone Test Script for JAP Average Time Scraper & Authentication
  */
 
 require_once __DIR__ . '/average_times_scraper.php';
@@ -17,5 +17,6 @@ echo json_encode([
     'success' => true,
     'total_services' => count($times),
     'duration_ms' => $duration,
+    'service_8651' => isset($times['8651']) ? $times['8651'] : 'Not found in scraped map',
     'sample_data' => array_slice($times, 0, 10, true),
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
