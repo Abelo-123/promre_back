@@ -270,7 +270,7 @@ if ($route === '/services') {
         $adjustmentsMap = [];
         try {
             require_once __DIR__ . '/../average_times_scraper.php';
-            $adjustmentsMap = getAverageTimes();
+            $adjustmentsMap = getAverageTimes($forceRefresh);
         } catch (Exception $e) {}
 
         // Fetch Raw Services
