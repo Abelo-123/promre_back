@@ -2,65 +2,11 @@
 /**
  * JustAnotherPanel Average Time Scraper & Real-Time SWR Module
  * 
- * Independently fetches, caches, and serves live service average_time metrics
- * from JustAnotherPanel (JAP.com) with window.modules.site.services JSON parsing,
- * robust CSRF session authentication, key-preserving multi-strategy parsing, and SWR sync.
+ * 1-to-1 PHP port of extract_services.py Python scraper.
+ * Logs into JustAnotherPanel and extracts 'average_time' for ALL services.
  */
 
 require_once __DIR__ . '/config.php';
-
-/**
- * Key-preserving associative merge helper for service maps.
- * Guarantees numeric service IDs (e.g. "8651") are preserved without PHP array_merge key reindexing.
- * Later map arguments overwrite earlier ones.
- */
-function mergeServiceMaps(...$maps) {
-    $result = [];
-    foreach ($maps as $map) {
-        if (is_array($map)) {
-            foreach ($map as $serviceId => $avgTime) {
-                if ($serviceId !== null && $avgTime !== null && $avgTime !== '') {
-                    $key = (string)$serviceId;
-                    $val = trim((string)$avgTime);
-                    if ($val !== '' && $val !== 'Not specified' && $val !== 'N/A') {
-                        $result[$key] = $val;
-                    }
-                }
-            }
-        }
-    }
-    return $result;
-}
-
-/**
- * Extract CSRF token from any PerfectPanel / SmartPanel / Yii2 HTML structure
- */
-function extractCsrfToken($html) {
-    if (empty($html)) return null;
-
-    if (preg_match('/<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']/i', $html, $m)) {
-        return $m[1];
-    }
-    if (preg_match('/<meta\s+content=["\']([^"\']+)["\']\s+name=["\']csrf-token["\']/i', $html, $m)) {
-        return $m[1];
-    }
-    if (preg_match('/<input\s+[^>]*?name=["\']_csrf[^"\']*["\']\s+[^>]*?value=["\']([^"\']+)["\']/i', $html, $m)) {
-        return $m[1];
-    }
-    if (preg_match('/<input\s+[^>]*?value=["\']([^"\']+)["\']\s+[^>]*?name=["\']_csrf[^"\']*["\']/i', $html, $m)) {
-        return $m[1];
-    }
-    if (preg_match('/"_csrf"\s*:\s*"([^"]+)"/i', $html, $m)) {
-        return $m[1];
-    }
-    if (preg_match('/"csrftoken"\s*:\s*"([^"]+)"/i', $html, $m)) {
-        return $m[1];
-    }
-    if (preg_match('/window\.csrfToken\s*=\s*"([^"]+)"/i', $html, $m)) {
-        return $m[1];
-    }
-    return null;
-}
 
 function fetchJapPage($url, $postData = null, $cookieJar = null) {
     $ch = curl_init();
@@ -68,12 +14,13 @@ function fetchJapPage($url, $postData = null, $cookieJar = null) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 120);
     
     $headers = [
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept: text/html,application/xhtml+xml,application/json,*/*;q=0.8',
+        'Accept: text/html,application/xhtml+xml,*/*;q=0.8',
         'Accept-Language: en-US,en;q=0.9',
+        'Accept-Encoding: identity',
     ];
 
     if ($cookieJar) {
@@ -104,145 +51,74 @@ function fetchJapPage($url, $postData = null, $cookieJar = null) {
 }
 
 /**
- * Extract { service_id => average_time } map from HTML/JS payload
+ * Extract { service_id => average_time } from authenticated page HTML (1-to-1 from extract_services.py)
  */
-function parseAverageTimesFromContent($htmlContent) {
+function extractAvgTimes($html) {
     $serviceMap = [];
-    if (empty($htmlContent)) return $serviceMap;
+    if (empty($html)) return $serviceMap;
 
-    // Strategy 1: Direct window.modules.site.services or site.services JSON Array Parsing
-    if (preg_match('/(?:window\.)?(?:modules\.)?(?:site\.)?services\s*=\s*(\[\s*\{.*?\}\s*\]);\s*/s', $htmlContent, $arrMatch) ||
-        preg_match('/var\s+services\s*=\s*(\[\s*\{.*?\}\s*\]);\s*/s', $htmlContent, $arrMatch)) {
-        $decoded = json_decode($arrMatch[1], true);
-        if (is_array($decoded)) {
-            foreach ($decoded as $item) {
-                if (is_array($item)) {
-                    $id = isset($item['id']) ? $item['id'] : (isset($item['service']) ? $item['service'] : null);
-                    $avg = isset($item['average_time']) ? $item['average_time'] : (isset($item['averageTime']) ? $item['averageTime'] : null);
-                    if ($id !== null && $avg !== null && trim((string)$avg) !== '') {
-                        $serviceMap[(string)$id] = trim((string)$avg);
-                    }
-                }
-            }
-        }
-    }
-
-    // Strategy 2: Parse individual JSON service objects: "id": 8651, ... "average_time": "5 hours"
-    if (preg_match_all('/"(?:id|service)"\s*:\s*"?(\d{2,8})"?\s*,[^{}]*?"average_time"\s*:\s*"([^"]+)"/s', $htmlContent, $matches, PREG_SET_ORDER)) {
+    // Primary: match service ID key -> object containing average_time value
+    // Pattern: "DIGITS":{"id":"DIGITS",...,"average_time":"TIMESTRING",...}
+    if (preg_match_all('/"(\d{2,8})"\s*:\s*\{[^{}]*?"average_time"\s*:\s*"([^"]+)"/s', $html, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
             $serviceMap[(string)$m[1]] = trim($m[2]);
         }
     }
 
-    // Strategy 3: Nested-brace tolerant JSON object regex: "8651": { ... "average_time": "5 hours" }
-    if (preg_match_all('/"(\d{2,8})"\s*:\s*\{(?:[^{}]|\{[^{}]*\}|\{[^{}]*\{[^{}]*\}*\})*?"average_time"\s*:\s*"([^"]+)"/s', $htmlContent, $matches, PREG_SET_ORDER)) {
+    if (!empty($serviceMap)) {
+        return $serviceMap;
+    }
+
+    // Fallback: match "id":"DIGITS" near "average_time":"VALUE" within same object
+    if (preg_match_all('/"id"\s*:\s*"(\d+)"(?:(?!"average_time")[^}])*"average_time"\s*:\s*"([^"]+)"/s', $html, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
             $serviceMap[(string)$m[1]] = trim($m[2]);
-        }
-    }
-
-    // Strategy 4: Proximity backward-search parsing
-    if (preg_match_all('/"average_time"\s*:\s*"([^"]+)"/s', $htmlContent, $timeMatches, PREG_OFFSET_CAPTURE)) {
-        foreach ($timeMatches as $tm) {
-            $timeVal = trim($tm[0][0]);
-            if (preg_match('/"average_time"\s*:\s*"([^"]+)"/', $timeVal, $valMatch)) {
-                $timeVal = trim($valMatch[1]);
-            }
-            $offset  = $tm[0][1];
-            $chunkStart = max(0, $offset - 1500);
-            $chunk = substr($htmlContent, $chunkStart, $offset - $chunkStart);
-
-            if (preg_match_all('/(?:"id"\s*:\s*"?(\d{2,8})"?|"service"\s*:\s*"?(\d{2,8})"?|"(\d{2,8})"\s*:\s*\{|data-id="(\d{2,8})"|service-(\d{2,8}))/s', $chunk, $idMatches, PREG_SET_ORDER)) {
-                $lastMatch = end($idMatches);
-                $id = !empty($lastMatch[1]) ? $lastMatch[1] :
-                     (!empty($lastMatch[2]) ? $lastMatch[2] :
-                     (!empty($lastMatch[3]) ? $lastMatch[3] :
-                     (!empty($lastMatch[4]) ? $lastMatch[4] :
-                     (!empty($lastMatch[5]) ? $lastMatch[5] : null))));
-                if ($id && !isset($serviceMap[(string)$id])) {
-                    $serviceMap[(string)$id] = $timeVal;
-                }
-            }
-        }
-    }
-
-    // Strategy 5: HTML Table & Data Attributes Parser
-    if (preg_match_all('/<tr[^>]*?(?:data-id="(\d+)"|id="service-(\d+)")[^>]*?>.*?average_time[^>]*?>([^<]+)</si', $htmlContent, $trMatches, PREG_SET_ORDER)) {
-        foreach ($trMatches as $m) {
-            $id = !empty($m[1]) ? $m[1] : $m[2];
-            $val = trim($m[3]);
-            if ($id && $val && !isset($serviceMap[(string)$id])) {
-                $serviceMap[(string)$id] = $val;
-            }
         }
     }
 
     return $serviceMap;
 }
 
+/**
+ * Log in to JustAnotherPanel and fetch authenticated dashboard payload (1-to-1 from extract_services.py)
+ */
 function scrapeJapAverageTimes() {
     $username = getenv('JAP_USERNAME') ?: 'Primora';
-    $envPass  = getenv('JAP_PASSWORD');
-    $passwordsToTry = array_values(array_filter(array_unique([
-        $envPass,
-        'Abelabate123@#',
-        'Abelabate123@'
-    ])));
-
+    $password = getenv('JAP_PASSWORD') ?: 'Abelabate123@#';
     $baseUrl  = 'https://justanotherpanel.com';
+
     $tempCookieFile = tempnam(sys_get_temp_dir(), 'jap_cookie_');
 
     try {
-        // Step 1: GET homepage to obtain CSRF token & session cookie
+        // [1/2] Getting login page + CSRF token...
         $landingHtml = fetchJapPage($baseUrl . '/', null, $tempCookieFile);
-        $csrf = extractCsrfToken($landingHtml);
-
-        if (!$csrf) {
-            $loginFormHtml = fetchJapPage($baseUrl . '/login', null, $tempCookieFile);
-            $csrf = extractCsrfToken($loginFormHtml);
+        $csrf = null;
+        if (preg_match('/"csrftoken"\s*:\s*"([^"]+)"/', $landingHtml, $m)) {
+            $csrf = $m[1];
         }
 
-        // Step 2: POST login credentials
-        $authHtml = '';
-        foreach ($passwordsToTry as $pass) {
-            $payload = [
-                'LoginForm[username]'   => $username,
-                'LoginForm[password]'   => $pass,
-                'LoginForm[rememberMe]' => '0',
-            ];
-            if ($csrf) {
-                $payload['_csrf'] = $csrf;
-                $payload['_csrf-frontend'] = $csrf;
-            }
-
-            $res = fetchJapPage($baseUrl . '/login', $payload, $tempCookieFile);
-            if (empty($res) || strpos($res, 'LoginForm') !== false) {
-                $res = fetchJapPage($baseUrl . '/', $payload, $tempCookieFile);
-            }
-
-            if (!empty($res) && strpos($res, 'LoginForm') === false) {
-                $authHtml = $res;
-                break;
-            }
+        // [2/2] Logging in and fetching authenticated dashboard...
+        $payload = [
+            'LoginForm[username]'   => $username,
+            'LoginForm[password]'   => $password,
+            'LoginForm[rememberMe]' => '0',
+        ];
+        if ($csrf) {
+            $payload['_csrf'] = $csrf;
         }
 
-        // Step 3: Fetch public services page and authenticated dashboard targets
-        $servicesHtml  = fetchJapPage($baseUrl . '/services', null, $tempCookieFile);
-        $dashboardHtml = fetchJapPage($baseUrl . '/', null, $tempCookieFile);
-        $newOrderHtml  = fetchJapPage($baseUrl . '/neworder', null, $tempCookieFile);
+        $body = fetchJapPage($baseUrl . '/', $payload, $tempCookieFile);
 
-        // Step 4: Extract maps from all targets
-        $mapLanding  = parseAverageTimesFromContent($landingHtml);
-        $mapServices = parseAverageTimesFromContent($servicesHtml);
-        $mapAuth     = parseAverageTimesFromContent($authHtml);
-        $mapDash     = parseAverageTimesFromContent($dashboardHtml);
-        $mapNewOrder = parseAverageTimesFromContent($newOrderHtml);
+        if (empty($body)) {
+            @unlink($tempCookieFile);
+            return [];
+        }
 
-        // Step 5: Merge maps in strict precedence: logged-in /neworder and dashboard overwrite static public catalog
-        $mergedMap = mergeServiceMaps($mapLanding, $mapServices, $mapAuth, $mapDash, $mapNewOrder);
+        // Extract average times from the authenticated body
+        $serviceMap = extractAvgTimes($body);
 
         @unlink($tempCookieFile);
-        return $mergedMap;
+        return $serviceMap;
 
     } catch (Exception $e) {
         error_log("[JAP Scraper] Exception: " . $e->getMessage());
@@ -270,7 +146,7 @@ function triggerAsyncRevalidation() {
 }
 
 /**
- * Get Average Times with Stale-While-Revalidate (SWR) logic & key preservation
+ * Get Average Times with Stale-While-Revalidate (SWR) logic
  */
 function getAverageTimes($forceRefresh = false) {
     $cacheDir = __DIR__ . '/cache';
@@ -279,7 +155,18 @@ function getAverageTimes($forceRefresh = false) {
     }
 
     $cacheFile = $cacheDir . '/average_times.json';
-    $swrTtl = (int)(getenv('JAP_SWR_TTL') ?: 30); // 30 seconds SWR stale window
+    $rootJson  = __DIR__ . '/../services_average_time.json';
+
+    // Seed cache from root services_average_time.json if cacheFile doesn't exist or root is newer
+    if (file_exists($rootJson)) {
+        if (!file_exists($cacheFile) || filemtime($rootJson) > filemtime($cacheFile)) {
+            $rootMap = json_decode(file_get_contents($rootJson), true);
+            if (is_array($rootMap)) {
+                file_put_contents($cacheFile, json_encode($rootMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                touch($cacheFile);
+            }
+        }
+    }
 
     $existingCachedMap = [];
     if (file_exists($cacheFile)) {
@@ -290,30 +177,63 @@ function getAverageTimes($forceRefresh = false) {
         }
     }
 
-    // Fast Path: Return cached data immediately if fresh (< 30s) and not forced
-    if (!$forceRefresh && file_exists($cacheFile)) {
-        $mtime = filemtime($cacheFile);
-        $age = time() - $mtime;
-
-        if ($age < $swrTtl) {
-            return $existingCachedMap;
-        }
-
-        // SWR Revalidation: Serve existing cache instantly while triggering background refresh if age > 30s
-        if (!empty($existingCachedMap)) {
-            triggerAsyncRevalidation();
-            return $existingCachedMap;
-        }
+    // Always serve existing cache instantly (0ms) and trigger background revalidation to JAP
+    if (!$forceRefresh && file_exists($cacheFile) && !empty($existingCachedMap)) {
+        triggerAsyncRevalidation();
+        return $existingCachedMap;
     }
 
     // Synchronous scrape (force refresh or empty cache)
     $freshMap = scrapeJapAverageTimes();
 
     if (!empty($freshMap)) {
-        // Key-preserving incremental merge: fresh live data overwrites existing cache
-        $finalMap = mergeServiceMaps($existingCachedMap, $freshMap);
-        file_put_contents($cacheFile, json_encode($finalMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        return $finalMap;
+        $changes = [];
+        $timestamp = date('c');
+
+        foreach ($freshMap as $id => $newTime) {
+            $oldTime = isset($existingCachedMap[$id]) ? $existingCachedMap[$id] : null;
+            if ($oldTime === null) {
+                $changes[] = [
+                    'service_id' => (string)$id,
+                    'status'     => 'NEW_SERVICE',
+                    'old_time'   => null,
+                    'new_time'   => $newTime,
+                    'changed_at' => $timestamp
+                ];
+            } else if ($oldTime !== $newTime) {
+                $changes[] = [
+                    'service_id' => (string)$id,
+                    'status'     => 'TIME_UPDATED',
+                    'old_time'   => $oldTime,
+                    'new_time'   => $newTime,
+                    'changed_at' => $timestamp
+                ];
+            }
+        }
+
+        // Merge fresh data onto existing map to guarantee 0 data loss
+        $mergedMap = array_merge($existingCachedMap, $freshMap);
+
+        file_put_contents($cacheFile, json_encode($mergedMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+        // Maintain a rolling history of recent changes (top 50)
+        $changesFile = $cacheDir . '/recent_changes.json';
+        $history = [];
+        if (file_exists($changesFile)) {
+            $hJson = json_decode(file_get_contents($changesFile), true);
+            if (isset($hJson['changes']) && is_array($hJson['changes'])) {
+                $history = $hJson['changes'];
+            }
+        }
+        $updatedHistory = !empty($changes) ? array_slice(array_merge($changes, $history), 0, 50) : $history;
+
+        file_put_contents($changesFile, json_encode([
+            'last_scrape_at' => $timestamp,
+            'total_changed'  => count($updatedHistory),
+            'changes'        => $updatedHistory
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+        return $mergedMap;
     }
 
     // Fallback: If live scrape failed, return existing cached data
@@ -325,3 +245,4 @@ if (php_sapi_name() === 'cli' || (isset($argv[1]) && $argv[1] === 'refresh')) {
     $data = getAverageTimes(true);
     echo "Scraped " . count($data) . " average times from JAP.\n";
 }
+

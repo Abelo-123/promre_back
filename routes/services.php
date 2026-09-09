@@ -99,10 +99,31 @@ if ($route === '/average-times') {
         $forceRefresh = (isset($requestData['action']) && $requestData['action'] === 'refresh') ||
                         (isset($requestData['refresh']) && $requestData['refresh'] === '1');
         $times = getAverageTimes($forceRefresh);
+        
+        $cacheFile = __DIR__ . '/../cache/average_times.json';
+        $lastMtime = file_exists($cacheFile) ? filemtime($cacheFile) : time();
+        $cacheAge = max(0, time() - $lastMtime);
+
+        $changesFile = __DIR__ . '/../cache/recent_changes.json';
+        $recentChanges = [];
+        $recentCount = 0;
+        if (file_exists($changesFile)) {
+            $cData = json_decode(file_get_contents($changesFile), true);
+            $recentChanges = isset($cData['changes']) && is_array($cData['changes']) ? $cData['changes'] : [];
+            $recentCount = isset($cData['total_changed']) ? (int)$cData['total_changed'] : count($recentChanges);
+        }
+
         echo json_encode([
             'success' => true,
-            'data' => $times,
-            'total' => count($times)
+            'mode' => $forceRefresh ? 'SWR_REVALIDATED_SERVE' : 'SWR_INSTANT_SERVE',
+            'request_timestamp' => date('c'),
+            'last_cache_update' => date('c', $lastMtime),
+            'cache_age_seconds' => $cacheAge,
+            'service_8651' => isset($times['8651']) ? $times['8651'] : (isset($times[8651]) ? $times[8651] : 'Not Found'),
+            'total_services' => count($times),
+            'recently_updated_count' => $recentCount,
+            'recently_updated_services' => $recentChanges,
+            'data' => $times
         ]);
     } catch (Exception $e) {
         http_response_code(500);
