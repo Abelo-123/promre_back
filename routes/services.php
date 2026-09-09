@@ -92,6 +92,25 @@ function fetchUpstreamServices() {
     throw new Exception($lastError);
 }
 
+// ─── ROUTE: /average-times (GET / POST) ───────────────────────────────────
+if ($route === '/average-times') {
+    try {
+        require_once __DIR__ . '/../average_times_scraper.php';
+        $forceRefresh = (isset($requestData['action']) && $requestData['action'] === 'refresh') ||
+                        (isset($requestData['refresh']) && $requestData['refresh'] === '1');
+        $times = getAverageTimes($forceRefresh);
+        echo json_encode([
+            'success' => true,
+            'data' => $times,
+            'total' => count($times)
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to fetch average times: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
 // ─── ROUTE: /categories (GET) ──────────────────────────────────────────────
 if ($route === '/categories') {
     try {
@@ -247,14 +266,11 @@ if ($route === '/services') {
             }
         } catch (Exception $e) {}
 
-        // Service delivery duration adjustments map
+        // Service delivery duration adjustments map (from JAP scraper cache)
         $adjustmentsMap = [];
         try {
-            $stmt = $pdo->query('SELECT service_id, average_time FROM service_adjustments');
-            $adjRows = $stmt->fetchAll();
-            foreach ($adjRows as $row) {
-                $adjustmentsMap[(int)$row['service_id']] = $row['average_time'];
-            }
+            require_once __DIR__ . '/../average_times_scraper.php';
+            $adjustmentsMap = getAverageTimes();
         } catch (Exception $e) {}
 
         // Fetch Raw Services
