@@ -325,7 +325,7 @@ if ($route === '/services') {
                 'max'           => (int)$svc['max'],
                 'refill'        => ($svc['refill'] === true || $svc['refill'] == 1 || $svc['refill'] === '1'),
                 'cancel'        => ($svc['cancel'] === true || $svc['cancel'] == 1 || $svc['cancel'] === '1'),
-                'average_time'  => isset($adjustmentsMap[$svcId]) ? $adjustmentsMap[$svcId] : (isset($svc['average_time']) ? $svc['average_time'] : 'Not specified'),
+                'average_time'  => isset($adjustmentsMap[$svcId]) ? $adjustmentsMap[$svcId] : (isset($adjustmentsMap[(string)$svcId]) ? $adjustmentsMap[(string)$svcId] : (isset($svc['average_time']) ? $svc['average_time'] : 'Not specified')),
                 'platform_id'   => determinePlatform($svc['category'])
             ];
         }
