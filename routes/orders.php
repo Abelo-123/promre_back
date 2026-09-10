@@ -566,8 +566,8 @@ if ($route === '/orders/list') {
     }
     
     try {
-        $stmt = $pdo->prepare('SELECT * FROM orders WHERE user_id = :user_id AND bot_id = :bot_id ORDER BY created_at DESC LIMIT 100');
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT * FROM orders WHERE user_id = :user_id ORDER BY created_at DESC LIMIT 100');
+        $stmt->execute(['user_id' => $tgId]);
         $rows = $stmt->fetchAll();
         
         // Ensure numeric formats
@@ -599,11 +599,11 @@ if ($route === '/orders/status') {
 
     try {
         $stmt = $pdo->prepare("
-            SELECT id, api_order_id, charge, quantity, status, reseller_cost, bot_id 
+            SELECT id, api_order_id, charge, quantity, status, reseller_cost 
             FROM orders 
-            WHERE user_id = :user_id AND bot_id = :bot_id AND status IN ('pending', 'in_progress', 'processing')
+            WHERE user_id = :user_id AND status IN ('pending', 'in_progress', 'processing')
         ");
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt->execute(['user_id' => $tgId]);
         $activeOrders = $stmt->fetchAll();
 
         if (count($activeOrders) === 0) {
@@ -677,27 +677,26 @@ if ($route === '/orders/status') {
                     }
 
                     // Process reseller_balance credit back (since reseller_balance was already deducted at order placement)
-                    if ($resellerRefund > 0 && !empty($order['bot_id'])) {
+                    if ($resellerRefund > 0) {
                         try {
                             $stmtCredit = $pdo->prepare("
                                 UPDATE settings 
                                 SET setting_value = CAST((CAST(setting_value AS DECIMAL(15,4)) + :ref) AS CHAR) 
-                                WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id
+                                WHERE setting_key = 'reseller_balance'
                             ");
-                            $stmtCredit->execute(['ref' => $resellerRefund, 'bot_id' => $order['bot_id']]);
+                            $stmtCredit->execute(['ref' => $resellerRefund]);
                         } catch (Exception $e) {
-                            error_log("RESELLER REFUND CREDIT FAILED FOR BOT " . $order['bot_id'] . ": " . $e->getMessage());
+                            error_log("RESELLER REFUND CREDIT FAILED: " . $e->getMessage());
                         }
                     }
                 }
 
-                $stmt = $pdo->prepare('UPDATE orders SET status = :status, start_count = :start, remains = :remains WHERE id = :id AND bot_id = :bot_id');
+                $stmt = $pdo->prepare('UPDATE orders SET status = :status, start_count = :start, remains = :remains WHERE id = :id');
                 $stmt->execute([
                     'status' => $newStatus,
                     'start'  => isset($info['start_count']) ? (int)$info['start_count'] : 0,
                     'remains' => isset($info['remains']) ? (int)$info['remains'] : 0,
-                    'id'     => $order['id'],
-                    'bot_id' => getCurrentBotId()
+                    'id'     => $order['id']
                 ]);
 
                 $updated[] = [
@@ -719,7 +718,7 @@ if ($route === '/orders/sync-all') {
     try {
         // Fetch up to 100 pending/processing orders across all bots and users
         $stmt = $pdo->prepare("
-            SELECT id, api_order_id, charge, quantity, status, reseller_cost, bot_id, user_id 
+            SELECT id, api_order_id, charge, quantity, status, reseller_cost, user_id 
             FROM orders 
             WHERE status IN ('pending', 'in_progress', 'processing') AND api_order_id IS NOT NULL AND api_order_id > 0
             ORDER BY id ASC
@@ -788,16 +787,16 @@ if ($route === '/orders/sync-all') {
                         }
                     }
 
-                    if ($resellerRefund > 0 && !empty($order['bot_id'])) {
+                    if ($resellerRefund > 0) {
                         try {
                             $stmtCredit = $pdo->prepare("
                                 UPDATE settings 
                                 SET setting_value = CAST((CAST(setting_value AS DECIMAL(15,4)) + :ref) AS CHAR) 
-                                WHERE setting_key = 'reseller_balance' AND bot_id = :bot_id
+                                WHERE setting_key = 'reseller_balance'
                             ");
-                            $stmtCredit->execute(['ref' => $resellerRefund, 'bot_id' => $order['bot_id']]);
+                            $stmtCredit->execute(['ref' => $resellerRefund]);
                         } catch (Exception $e) {
-                            error_log("CRON RESELLER REFUND CREDIT FAILED FOR BOT " . $order['bot_id'] . ": " . $e->getMessage());
+                            error_log("CRON RESELLER REFUND CREDIT FAILED: " . $e->getMessage());
                         }
                     }
                 }
@@ -836,8 +835,8 @@ if ($route === '/orders/refill') {
     try {
         $orderId = isset($requestData['order_id']) ? (int)$requestData['order_id'] : 0;
         
-        $stmt = $pdo->prepare('SELECT api_order_id FROM orders WHERE id = :id AND user_id = :user_id AND bot_id = :bot_id');
-        $stmt->execute(['id' => $orderId, 'user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT api_order_id FROM orders WHERE id = :id AND user_id = :user_id');
+        $stmt->execute(['id' => $orderId, 'user_id' => $tgId]);
         $order = $stmt->fetch();
         
         if (!$order) {

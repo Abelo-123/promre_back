@@ -787,7 +787,6 @@ if (
                 'first_name'   => $firstName,
                 'amount'       => $amount,
                 'new_balance'  => $newBalance,
-                'bot_id'       => $botId,
                 'notification' => $notifyRes
             ]
         ], JSON_PRETTY_PRINT);

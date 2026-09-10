@@ -88,8 +88,7 @@ if ($route === '/app/settings') {
 // Route: /app/recommended (GET)
 if ($route === '/app/recommended') {
     try {
-        $stmt = $pdo->prepare('SELECT service_id FROM recommended_services WHERE bot_id = :bot_id');
-        $stmt->execute(['bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->query('SELECT service_id FROM recommended_services');
         $rows = $stmt->fetchAll();
         $ids = [];
         foreach ($rows as $r) {
@@ -113,8 +112,8 @@ if ($route === '/app/alerts') {
     }
     
     try {
-        $stmt = $pdo->prepare('SELECT * FROM alerts WHERE user_id = :user_id AND bot_id = :bot_id ORDER BY created_at DESC LIMIT 50');
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('SELECT * FROM alerts WHERE user_id = :user_id ORDER BY created_at DESC LIMIT 50');
+        $stmt->execute(['user_id' => $tgId]);
         $alerts = $stmt->fetchAll();
         
         $unreadCount = 0;
@@ -145,8 +144,8 @@ if ($route === '/app/alerts/mark-read') {
     }
     
     try {
-        $stmt = $pdo->prepare('UPDATE alerts SET is_read = 1 WHERE user_id = :user_id AND bot_id = :bot_id');
-        $stmt->execute(['user_id' => $tgId, 'bot_id' => getCurrentBotId()]);
+        $stmt = $pdo->prepare('UPDATE alerts SET is_read = 1 WHERE user_id = :user_id');
+        $stmt->execute(['user_id' => $tgId]);
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         echo json_encode(['success' => false]);
@@ -171,16 +170,12 @@ if ($route === '/app/auth') {
     $username = $tgUser && isset($tgUser['username']) ? $tgUser['username'] : 'local_user';
     $photoUrl = $tgUser && isset($tgUser['photo_url']) ? $tgUser['photo_url'] : '';
     
-    // Force currentBotId evaluation BEFORE user lookup to make sure session/globals are populated
-    $botId = getCurrentBotId();
-    
-    error_log("[DEBUG Auth] Starting auth request. tgId: {$tgId}, firstName: {$firstName}, username: {$username}, botId: {$botId}");
+    error_log("[DEBUG Auth] Starting auth request. tgId: {$tgId}, firstName: {$firstName}, username: {$username}");
     
     try {
         // Look up user
-        error_log("[DEBUG Auth] Executing DB lookup for tg_id={$tgId} AND bot_id={$botId}");
-        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-        $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
+        $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
+        $stmt->execute(['tg_id' => $tgId]);
         $user = $stmt->fetch();
         
         if (!$user) {
@@ -192,12 +187,11 @@ if ($route === '/app/auth') {
             
             error_log("[DEBUG Auth] Inserting new user into auth table with referral code: {$newRefCode}");
             $stmt = $pdo->prepare("
-                INSERT INTO auth (tg_id, bot_id, username, first_name, last_name, photo_url, balance, auth_provider, last_login, referral_code) 
-                VALUES (:tg_id, :bot_id, :username, :first_name, :last_name, :photo_url, 0.00, 'telegram', NOW(), :referral_code)
+                INSERT INTO auth (tg_id, username, first_name, last_name, photo_url, balance, auth_provider, last_login, referral_code) 
+                VALUES (:tg_id, :username, :first_name, :last_name, :photo_url, 0.00, 'telegram', NOW(), :referral_code)
             ");
             $stmt->execute([
                 'tg_id'         => $tgId,
-                'bot_id'        => $botId,
                 'username'      => $username,
                 'first_name'    => $firstName,
                 'last_name'     => $lastName,
@@ -215,8 +209,8 @@ if ($route === '/app/auth') {
             }
             
             // Fetch newly created user
-            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-            $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
+            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
+            $stmt->execute(['tg_id' => $tgId]);
             $user = $stmt->fetch();
         } else {
             error_log("[DEBUG Auth] User already exists in DB. Last login was: " . ($user['last_login'] ?? 'unknown'));
@@ -227,28 +221,27 @@ if ($route === '/app/auth') {
                 $idSuffix = substr($tgId, -3);
                 $refCode = "REF{$randomHex}{$idSuffix}";
                 
-                $stmt = $pdo->prepare('UPDATE auth SET referral_code = :ref_code WHERE tg_id = :tg_id AND bot_id = :bot_id');
-                $stmt->execute(['ref_code' => $refCode, 'tg_id' => $tgId, 'bot_id' => $botId]);
+                $stmt = $pdo->prepare('UPDATE auth SET referral_code = :ref_code WHERE tg_id = :tg_id');
+                $stmt->execute(['ref_code' => $refCode, 'tg_id' => $tgId]);
             }
             
             // Update last login details
             $stmt = $pdo->prepare('
                 UPDATE auth 
                 SET username = :username, first_name = :first_name, last_name = :last_name, photo_url = :photo_url, last_login = NOW() 
-                WHERE tg_id = :tg_id AND bot_id = :bot_id
+                WHERE tg_id = :tg_id
             ');
             $stmt->execute([
                 'username'   => $username,
                 'first_name' => $firstName,
                 'last_name'  => $lastName,
                 'photo_url'  => $photoUrl,
-                'tg_id'      => $tgId,
-                'bot_id'     => $botId
+                'tg_id'      => $tgId
             ]);
             
             // Re-fetch updated user
-            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id AND bot_id = :bot_id');
-            $stmt->execute(['tg_id' => $tgId, 'bot_id' => $botId]);
+            $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id');
+            $stmt->execute(['tg_id' => $tgId]);
             $user = $stmt->fetch();
         }
         
@@ -261,7 +254,6 @@ if ($route === '/app/auth') {
         // Debugging info
         $debugInfo = [
             'input_user_id' => $tgId,
-            'resolved_bot_id' => $botId,
             'db_user_found' => !empty($user),
             'db_user_balance' => !empty($user) ? (float)$user['balance'] : null,
             'is_telegram_payload' => !empty($tgUser),
@@ -274,7 +266,6 @@ if ($route === '/app/auth') {
             'user' => [
                 'id'             => $user['tg_id'],
                 'tg_id'          => $user['tg_id'],
-                'bot_id'         => $user['bot_id'],
                 'username'       => !empty($user['username']) ? $user['username'] : $username,
                 'first_name'     => !empty($user['first_name']) ? $user['first_name'] : $firstName,
                 'last_name'      => !empty($user['last_name']) ? $user['last_name'] : $lastName,

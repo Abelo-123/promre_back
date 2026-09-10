@@ -1,0 +1,13 @@
+{
+  "last_scrape_at": "2026-09-09T17:02:04.704Z",
+  "total_changed": 1,
+  "changes": [
+    {
+      "service_id": "8651",
+      "status": "TIME_UPDATED",
+      "old_time": "4 hours 35 minutes",
+      "new_time": "4 hours 41 minutes",
+      "changed_at": "2026-09-09T17:01:49.507Z"
+    }
+  ]
+}
