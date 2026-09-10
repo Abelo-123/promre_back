@@ -13,6 +13,12 @@ if ($route === '/app/heartbeat') {
     exit;
 }
 
+// Route: /app/wake (GET/POST)
+if ($route === '/app/wake') {
+    echo json_encode(['status' => 'online', 'timestamp' => time()]);
+    exit;
+}
+
 // Route: /app/log-init-data (POST)
 if ($route === '/app/log-init-data') {
     echo json_encode(['success' => true]);
@@ -262,40 +268,6 @@ if ($route === '/app/auth') {
             'raw_first_name' => $firstName,
             'raw_username' => $username,
         ];
-
-        // Fetch GodOfPanel (upstream provider) balance for debugging if API key exists
-        if (!empty($gopApiKey)) {
-            try {
-                $gopRes = curlRequest('POST', $smmProviderUrl, [], [
-                    'key' => $gopApiKey,
-                    'action' => 'balance'
-                ], 10);
-                $gopData = json_decode($gopRes['body'], true);
-                if ($gopData && isset($gopData['balance'])) {
-                    $debugInfo['upstream_provider'] = [
-                        'name' => 'GodOfPanel',
-                        'balance' => $gopData['balance'],
-                        'currency' => isset($gopData['currency']) ? $gopData['currency'] : 'USD'
-                    ];
-                } else {
-                    $debugInfo['upstream_provider'] = [
-                        'name' => 'GodOfPanel',
-                        'error' => isset($gopData['error']) ? $gopData['error'] : 'Invalid response format',
-                        'raw_response' => substr($gopRes['body'], 0, 500)
-                    ];
-                }
-            } catch (Exception $e) {
-                $debugInfo['upstream_provider'] = [
-                    'name' => 'GodOfPanel',
-                    'error' => $e->getMessage()
-                ];
-            }
-        } else {
-            $debugInfo['upstream_provider'] = [
-                'name' => 'GodOfPanel',
-                'error' => 'API Key is empty or missing'
-            ];
-        }
         
         echo json_encode([
             'success' => true,
