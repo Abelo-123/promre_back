@@ -84,6 +84,63 @@ if ($route === '/admin/login' && $method === 'POST') {
 // All remaining /admin/ routes require auth
 verifyAdminAuth($pdo);
 
+// GET /admin/dashboard
+if ($route === '/admin/dashboard' && $method === 'GET') {
+    try {
+        $uStmt = $pdo->query("SELECT COUNT(*) as total FROM auth");
+        $totalUsers = (int)($uStmt->fetch()['total'] ?? 0);
+
+        $oStmt = $pdo->query("SELECT COUNT(*) as total FROM orders");
+        $totalOrders = (int)($oStmt->fetch()['total'] ?? 0);
+
+        $dStmt = $pdo->query("SELECT COUNT(*) as total FROM deposits WHERE status IN ('completed', 'success')");
+        $totalDeposits = (int)($dStmt->fetch()['total'] ?? 0);
+
+        $rStmt = $pdo->query("SELECT COALESCE(SUM(amount), 0) as total FROM deposits WHERE status IN ('completed', 'success')");
+        $totalRevenue = (float)($rStmt->fetch()['total'] ?? 0);
+
+        $roStmt = $pdo->query("
+            SELECT o.*, a.username, a.first_name 
+            FROM orders o 
+            LEFT JOIN auth a ON o.user_id = a.tg_id 
+            ORDER BY o.created_at DESC LIMIT 10
+        ");
+        $recentOrders = $roStmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($recentOrders as &$o) {
+            $o['id'] = (int)$o['id'];
+            $o['quantity'] = (int)$o['quantity'];
+            $o['charge'] = (float)($o['charge'] ?? 0);
+            $o['cost'] = (float)($o['cost'] ?? $o['charge'] ?? 0);
+        }
+
+        $rdStmt = $pdo->query("
+            SELECT d.*, a.username, a.first_name 
+            FROM deposits d 
+            LEFT JOIN auth a ON d.user_id = a.tg_id 
+            ORDER BY d.created_at DESC LIMIT 10
+        ");
+        $recentDeposits = $rdStmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($recentDeposits as &$d) {
+            $d['id'] = (int)$d['id'];
+            $d['amount'] = (float)$d['amount'];
+        }
+
+        echo json_encode([
+            'totalUsers' => $totalUsers,
+            'totalOrders' => $totalOrders,
+            'totalDeposits' => $totalDeposits,
+            'totalRevenue' => $totalRevenue,
+            'recentOrders' => $recentOrders,
+            'recentDeposits' => $recentDeposits
+        ]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to load dashboard: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
 // GET /admin/holidays
 if ($route === '/admin/holidays' && $method === 'GET') {
     try {
