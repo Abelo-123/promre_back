@@ -83,8 +83,8 @@ function extractGopAvgTimes($html) {
     $serviceMap = [];
     if (empty($html)) return $serviceMap;
 
-    // Strategy 1: Ungreedy regex matching GodOfPanel JSON object fields: "id":7821 ... "average_time":"1 minute"
-    if (preg_match_all('/"id"\s*:\s*(\d+)\s*,.*?"average_time"\s*:\s*"([^"]*)"/sU', $html, $matches, PREG_SET_ORDER)) {
+    // Strategy 1: "id":7821 ... "average_time":"1 minute" inside same { ... } object
+    if (preg_match_all('/"id"\s*:\s*(\d+)\b[^}]*?"average_time"\s*:\s*"([^"]*)"/s', $html, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
             $svcId = (string)$m[1];
             $avgTime = trim($m[2]);
@@ -94,15 +94,11 @@ function extractGopAvgTimes($html) {
         }
     }
 
-    if (!empty($serviceMap)) {
-        return $serviceMap;
-    }
-
-    // Strategy 2: Quoted ID fallback: "id":"7821" ... "average_time":"1 minute"
-    if (preg_match_all('/"id"\s*:\s*"(\d+)"\s*,.*?"average_time"\s*:\s*"([^"]*)"/sU', $html, $matches, PREG_SET_ORDER)) {
+    // Strategy 2: "average_time":"1 minute" ... "id":7821 inside same { ... } object
+    if (preg_match_all('/"average_time"\s*:\s*"([^"]*)"[^}]*?"id"\s*:\s*(\d+)\b/s', $html, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
-            $svcId = (string)$m[1];
-            $avgTime = trim($m[2]);
+            $svcId = (string)$m[2];
+            $avgTime = trim($m[1]);
             if (!empty($avgTime)) {
                 $serviceMap[$svcId] = $avgTime;
             }
