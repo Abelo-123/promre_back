@@ -199,7 +199,9 @@ function scrapeGopAverageTimes($debug = false) {
         $debugLog['map_from_services_count'] = count($mapFromServices);
 
         if (!empty($mapFromServices)) {
-            $serviceMap = array_merge($serviceMap, $mapFromServices);
+            foreach ($mapFromServices as $k => $v) {
+                $serviceMap[(string)$k] = $v;
+            }
         }
 
         @unlink($tempCookieFile);
@@ -208,10 +210,10 @@ function scrapeGopAverageTimes($debug = false) {
             return [
                 'debug_log' => $debugLog,
                 'extracted_targets' => [
-                    '7821' => $serviceMap['7821'] ?? 'NOT_IN_MAP',
-                    '2720' => $serviceMap['2720'] ?? 'NOT_IN_MAP',
-                    '3982' => $serviceMap['3982'] ?? 'NOT_IN_MAP',
-                    '7820' => $serviceMap['7820'] ?? 'NOT_IN_MAP',
+                    '7821' => isset($serviceMap['7821']) ? $serviceMap['7821'] : (isset($serviceMap[7821]) ? $serviceMap[7821] : 'NOT_IN_MAP'),
+                    '2720' => isset($serviceMap['2720']) ? $serviceMap['2720'] : (isset($serviceMap[2720]) ? $serviceMap[2720] : 'NOT_IN_MAP'),
+                    '3982' => isset($serviceMap['3982']) ? $serviceMap['3982'] : (isset($serviceMap[3982]) ? $serviceMap[3982] : 'NOT_IN_MAP'),
+                    '7820' => isset($serviceMap['7820']) ? $serviceMap['7820'] : (isset($serviceMap[7820]) ? $serviceMap[7820] : 'NOT_IN_MAP'),
                 ],
                 'sample_map' => array_slice($serviceMap, 0, 10, true)
             ];
@@ -296,7 +298,10 @@ function getGodofpanelAverageTimes($forceRefresh = false) {
     $freshMap = scrapeGopAverageTimes();
 
     if (!empty($freshMap)) {
-        $mergedMap = array_merge($existingDataMap, $freshMap);
+        $mergedMap = $existingDataMap;
+        foreach ($freshMap as $k => $v) {
+            $mergedMap[(string)$k] = $v;
+        }
         
         // Build single JSON structure with last_updated at top
         $newPayload = [
