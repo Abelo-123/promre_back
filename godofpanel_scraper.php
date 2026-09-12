@@ -129,12 +129,13 @@ function extractGopAvgTimes($html) {
 /**
  * Log in to GodOfPanel and fetch authenticated dashboard payload
  */
-function scrapeGopAverageTimes() {
+function scrapeGopAverageTimes($debug = false) {
     $username = getenv('GOP_USERNAME') ?: 'yohannes21';
     $password = getenv('GOP_PASSWORD') ?: 'wNtECw6cQfX3G@H';
     $baseUrl  = 'https://godofpanel.com';
 
     $tempCookieFile = tempnam(sys_get_temp_dir(), 'gop_cookie_');
+    $debugLog = [];
 
     try {
         // [1/3] Fetching login page + CSRF token...
@@ -147,6 +148,8 @@ function scrapeGopAverageTimes() {
             if ($csrf) $landingHtml = $loginHtml;
         }
 
+        $debugLog['csrf_found'] = !empty($csrf);
+
         // [2/3] Logging in as GOP_USERNAME...
         $payload = [
             'LoginForm[username]'   => $username,
@@ -158,25 +161,50 @@ function scrapeGopAverageTimes() {
         }
 
         $body = fetchGopPage($baseUrl . '/', $payload, $tempCookieFile);
-        if (empty($body)) {
-            @unlink($tempCookieFile);
-            return [];
-        }
+        $debugLog['post_login_html_len'] = strlen($body);
 
         $serviceMap = extractGopAvgTimes($body);
+        $debugLog['map_after_login_count'] = count($serviceMap);
 
-        // [3/3] If not found in POST body, fetch authenticated dashboard or /services page
-        if (empty($serviceMap)) {
-            $body = fetchGopPage($baseUrl . '/', null, $tempCookieFile);
-            $serviceMap = extractGopAvgTimes($body);
+        // [3/3] Fetch authenticated dashboard or /services page
+        $servicesHtml = fetchGopPage($baseUrl . '/services', null, $tempCookieFile);
+        $debugLog['services_html_len'] = strlen($servicesHtml);
+
+        $targetIds = ['7821', '2720', '3982', '7820'];
+        $snippets = [];
+        foreach ($targetIds as $tid) {
+            $pos = strpos($servicesHtml, $tid);
+            if ($pos !== false) {
+                $snippets[$tid] = substr($servicesHtml, max(0, $pos - 150), 600);
+            } else {
+                $snippets[$tid] = 'NOT_FOUND';
+            }
         }
+        $debugLog['target_snippets'] = $snippets;
 
-        if (empty($serviceMap)) {
-            $body = fetchGopPage($baseUrl . '/services', null, $tempCookieFile);
-            $serviceMap = extractGopAvgTimes($body);
+        // Try extracting from /services HTML
+        $mapFromServices = extractGopAvgTimes($servicesHtml);
+        $debugLog['map_from_services_count'] = count($mapFromServices);
+
+        if (!empty($mapFromServices)) {
+            $serviceMap = array_merge($serviceMap, $mapFromServices);
         }
 
         @unlink($tempCookieFile);
+
+        if ($debug) {
+            return [
+                'debug_log' => $debugLog,
+                'extracted_targets' => [
+                    '7821' => $serviceMap['7821'] ?? 'NOT_IN_MAP',
+                    '2720' => $serviceMap['2720'] ?? 'NOT_IN_MAP',
+                    '3982' => $serviceMap['3982'] ?? 'NOT_IN_MAP',
+                    '7820' => $serviceMap['7820'] ?? 'NOT_IN_MAP',
+                ],
+                'sample_map' => array_slice($serviceMap, 0, 10, true)
+            ];
+        }
+
         return $serviceMap;
 
     } catch (Exception $e) {
@@ -184,6 +212,7 @@ function scrapeGopAverageTimes() {
         if (file_exists($tempCookieFile)) {
             @unlink($tempCookieFile);
         }
+        if ($debug) return ['error' => $e->getMessage(), 'debug_log' => $debugLog];
         return [];
     }
 }
@@ -208,6 +237,10 @@ function triggerGopAsyncRevalidation() {
  * Formatted with 'last_updated' at top.
  */
 function getGodofpanelAverageTimes($forceRefresh = false) {
+    if (isset($_GET['debug']) && $_GET['debug'] === '1') {
+        return scrapeGopAverageTimes(true);
+    }
+
     $cacheDir = __DIR__ . '/cache';
     if (!file_exists($cacheDir)) {
         @mkdir($cacheDir, 0755, true);
@@ -293,3 +326,4 @@ if (php_sapi_name() === 'cli' || (isset($argv[1]) && $argv[1] === 'refresh')) {
     $res = getGodofpanelAverageTimes(true);
     echo "Scraped & Replaced JSON with " . ($res['total_services'] ?? 0) . " services at " . ($res['last_updated'] ?? '') . "\n";
 }
+
