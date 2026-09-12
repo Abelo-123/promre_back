@@ -132,6 +132,47 @@ if ($route === '/average-times') {
     exit;
 }
 
+// ─── ROUTE: /godofpanel-average-times (GET / POST) ───────────────────────────
+if ($route === '/godofpanel-average-times' || $route === '/gop-average-times') {
+    try {
+        require_once __DIR__ . '/../godofpanel_scraper.php';
+        $forceRefresh = (isset($requestData['action']) && $requestData['action'] === 'refresh') ||
+                        (isset($requestData['refresh']) && $requestData['refresh'] === '1');
+        $times = getGodofpanelAverageTimes($forceRefresh);
+        
+        $cacheFile = __DIR__ . '/../cache/godofpanel_average_times.json';
+        $lastMtime = file_exists($cacheFile) ? filemtime($cacheFile) : time();
+        $cacheAge = max(0, time() - $lastMtime);
+
+        $changesFile = __DIR__ . '/../cache/gop_recent_changes.json';
+        $recentChanges = [];
+        $recentCount = 0;
+        if (file_exists($changesFile)) {
+            $cData = json_decode(file_get_contents($changesFile), true);
+            $recentChanges = isset($cData['changes']) && is_array($cData['changes']) ? $cData['changes'] : [];
+            $recentCount = isset($cData['total_changed']) ? (int)$cData['total_changed'] : count($recentChanges);
+        }
+
+        echo json_encode([
+            'success' => true,
+            'provider' => 'godofpanel.com',
+            'mode' => $forceRefresh ? 'SWR_REVALIDATED_SERVE' : 'SWR_INSTANT_SERVE',
+            'request_timestamp' => date('c'),
+            'last_cache_update' => date('c', $lastMtime),
+            'cache_age_seconds' => $cacheAge,
+            'total_services' => count($times),
+            'recently_updated_count' => $recentCount,
+            'recently_updated_services' => $recentChanges,
+            'data' => $times
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to fetch GodOfPanel average times: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+
 // ─── ROUTE: /categories (GET) ──────────────────────────────────────────────
 if ($route === '/categories') {
     try {
