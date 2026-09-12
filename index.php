@@ -140,6 +140,8 @@ if (strpos($route, '/app/') === 0 || $route === '/app') {
     require_once __DIR__ . '/routes/referral.php';
 } elseif (strpos($route, '/withdraw/') === 0 || $route === '/withdraw') {
     require_once __DIR__ . '/routes/withdraw.php';
+} elseif (strpos($route, '/admin/') === 0 || $route === '/admin') {
+    require_once __DIR__ . '/routes/admin.php';
 } elseif ($route === '/debug/auth') {
     // Full diagnostic endpoint — shows every HMAC step
     $initRaw = isset($requestData['initData']) ? $requestData['initData'] : '';
