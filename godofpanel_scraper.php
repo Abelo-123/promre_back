@@ -216,18 +216,9 @@ function getGodofpanelAverageTimes($forceRefresh = false) {
     }
 
     $cacheFile = $cacheDir . '/godofpanel_average_times.json';
-    $seedJson  = __DIR__ . '/../../apps/hybrid-app/services_average_time.json';
-
-    // Seed cache from hybrid-app services_average_time.json if cacheFile doesn't exist
-    if (!file_exists($cacheFile) && file_exists($seedJson)) {
-        $seedMap = json_decode(file_get_contents($seedJson), true);
-        if (is_array($seedMap)) {
-            file_put_contents($cacheFile, json_encode($seedMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-            touch($cacheFile);
-        }
-    }
 
     $existingCachedMap = [];
+
     if (file_exists($cacheFile)) {
         $content = file_get_contents($cacheFile);
         $json = json_decode($content, true);
