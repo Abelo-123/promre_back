@@ -3,7 +3,7 @@
  * GodOfPanel Average Time Scraper & Real-Time SWR Module
  * 
  * Extracts 'average_time' for ALL services from GodOfPanel (godofpanel.com).
- * Uses credentials from GOP_USERNAME & GOP_PASSWORD environment variables.
+ * Uses a SINGLE JSON cache file (`cache/godofpanel_average_times.json`) with 'last_updated' at the top.
  */
 
 require_once __DIR__ . '/config.php';
@@ -56,7 +56,6 @@ function fetchGopPage($url, $postData = null, $cookieJar = null) {
 function findGopCsrf($html) {
     if (empty($html)) return [null, '_csrf'];
 
-    // Pattern 1: <input ... name="_csrf..." value="...">
     if (preg_match('/<input[^>]+name=["\']?([^"\'>]*csrf[^"\'>]*)["\']?[^>]+value=["\']([^"\']+)["\']/i', $html, $m)) {
         return [$m[2], $m[1]];
     }
@@ -64,13 +63,11 @@ function findGopCsrf($html) {
         return [$m[1], $m[2]];
     }
 
-    // Pattern 2: Meta tags
     if (preg_match('/<meta[^>]+name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m) ||
         preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']csrf-token["\']/i', $html, $m)) {
         return [$m[1], '_csrf'];
     }
 
-    // Pattern 3: JS objects
     if (preg_match('/["\']?_?csrf[-_]?token["\']?\s*[:=]\s*["\']([^"\']+)["\']/i', $html, $m) ||
         preg_match('/["\']?_csrf["\']?\s*[:=]\s*["\']([^"\']+)["\']/i', $html, $m)) {
         return [$m[1], '_csrf'];
@@ -207,7 +204,8 @@ function triggerGopAsyncRevalidation() {
 }
 
 /**
- * Get GodOfPanel Average Times with Stale-While-Revalidate (SWR) logic
+ * Get GodOfPanel Average Times using a SINGLE JSON cache file.
+ * Formatted with 'last_updated' at top.
  */
 function getGodofpanelAverageTimes($forceRefresh = false) {
     $cacheDir = __DIR__ . '/cache';
@@ -217,80 +215,81 @@ function getGodofpanelAverageTimes($forceRefresh = false) {
 
     $cacheFile = $cacheDir . '/godofpanel_average_times.json';
 
-    $existingCachedMap = [];
+    $existingCachePayload = null;
+    $existingDataMap = [];
 
     if (file_exists($cacheFile)) {
         $content = file_get_contents($cacheFile);
         $json = json_decode($content, true);
         if (is_array($json)) {
-            $existingCachedMap = $json;
+            $existingCachePayload = $json;
+            if (isset($json['data']) && is_array($json['data'])) {
+                $existingDataMap = $json['data'];
+            } else {
+                // Legacy flat format fallback
+                $existingDataMap = $json;
+            }
         }
     }
 
     // Serve existing cache instantly (0ms) and trigger background revalidation
-    if (!$forceRefresh && file_exists($cacheFile) && !empty($existingCachedMap)) {
+    if (!$forceRefresh && !empty($existingCachePayload)) {
         triggerGopAsyncRevalidation();
-        return $existingCachedMap;
+        // Return existing JSON payload directly (ensuring last_updated is at top)
+        if (isset($existingCachePayload['last_updated'])) {
+            return $existingCachePayload;
+        }
+        return [
+            'last_updated'   => date('c', filemtime($cacheFile)),
+            'total_services' => count($existingDataMap),
+            'provider'       => 'godofpanel.com',
+            'data'           => $existingDataMap
+        ];
     }
 
     // Synchronous scrape (force refresh or empty cache)
     $freshMap = scrapeGopAverageTimes();
 
     if (!empty($freshMap)) {
-        $changes = [];
-        $timestamp = date('c');
+        $mergedMap = array_merge($existingDataMap, $freshMap);
+        
+        // Build single JSON structure with last_updated at top
+        $newPayload = [
+            'last_updated'   => date('c'),
+            'total_services' => count($mergedMap),
+            'provider'       => 'godofpanel.com',
+            'data'           => $mergedMap
+        ];
 
-        foreach ($freshMap as $id => $newTime) {
-            $oldTime = isset($existingCachedMap[$id]) ? $existingCachedMap[$id] : null;
-            if ($oldTime === null) {
-                $changes[] = [
-                    'service_id' => (string)$id,
-                    'status'     => 'NEW_SERVICE',
-                    'old_time'   => null,
-                    'new_time'   => $newTime,
-                    'changed_at' => $timestamp
-                ];
-            } else if ($oldTime !== $newTime) {
-                $changes[] = [
-                    'service_id' => (string)$id,
-                    'status'     => 'TIME_UPDATED',
-                    'old_time'   => $oldTime,
-                    'new_time'   => $newTime,
-                    'changed_at' => $timestamp
-                ];
-            }
-        }
+        // Replace current JSON file directly
+        file_put_contents($cacheFile, json_encode($newPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-        // Merge fresh data onto existing map to guarantee 0 data loss
-        $mergedMap = array_merge($existingCachedMap, $freshMap);
-        file_put_contents($cacheFile, json_encode($mergedMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-
-        // Maintain a rolling history of recent changes (top 50)
-        $changesFile = $cacheDir . '/gop_recent_changes.json';
-        $history = [];
-        if (file_exists($changesFile)) {
-            $hJson = json_decode(file_get_contents($changesFile), true);
-            if (isset($hJson['changes']) && is_array($hJson['changes'])) {
-                $history = $hJson['changes'];
-            }
-        }
-        $updatedHistory = !empty($changes) ? array_slice(array_merge($changes, $history), 0, 50) : $history;
-
-        file_put_contents($changesFile, json_encode([
-            'last_scrape_at' => $timestamp,
-            'total_changed'  => count($updatedHistory),
-            'changes'        => $updatedHistory
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-
-        return $mergedMap;
+        return $newPayload;
     }
 
-    // Fallback: If live scrape failed, return existing cached data
-    return $existingCachedMap;
+    // Fallback: If live scrape failed, return existing cached payload
+    if (!empty($existingCachePayload)) {
+        if (isset($existingCachePayload['last_updated'])) {
+            return $existingCachePayload;
+        }
+        return [
+            'last_updated'   => date('c', file_exists($cacheFile) ? filemtime($cacheFile) : time()),
+            'total_services' => count($existingDataMap),
+            'provider'       => 'godofpanel.com',
+            'data'           => $existingDataMap
+        ];
+    }
+
+    return [
+        'last_updated'   => date('c'),
+        'total_services' => 0,
+        'provider'       => 'godofpanel.com',
+        'data'           => []
+    ];
 }
 
 // CLI Execution Support
 if (php_sapi_name() === 'cli' || (isset($argv[1]) && $argv[1] === 'refresh')) {
-    $data = getGodofpanelAverageTimes(true);
-    echo "Scraped " . count($data) . " average times from GodOfPanel.\n";
+    $res = getGodofpanelAverageTimes(true);
+    echo "Scraped & Replaced JSON with " . ($res['total_services'] ?? 0) . " services at " . ($res['last_updated'] ?? '') . "\n";
 }
