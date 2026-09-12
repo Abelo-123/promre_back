@@ -83,10 +83,14 @@ function extractGopAvgTimes($html) {
     $serviceMap = [];
     if (empty($html)) return $serviceMap;
 
-    // Strategy 1: "DIGITS":{"id":"DIGITS",...,"average_time":"TIMESTRING",...}
-    if (preg_match_all('/"(\d{1,8})"\s*:\s*\{[^{}]*?"average_time"\s*:\s*"([^"]+)"/s', $html, $matches, PREG_SET_ORDER)) {
+    // Strategy 1: GodOfPanel JSON array format: {"id":7821,...,"average_time":"1 minute"} or {"id":"7821",...,"average_time":"1 minute"}
+    if (preg_match_all('/"id"\s*:\s*"?(\d+)"?[^{}]*?"average_time"\s*:\s*"([^"]*)"/s', $html, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
-            $serviceMap[(string)$m[1]] = trim($m[2]);
+            $svcId = (string)$m[1];
+            $avgTime = trim($m[2]);
+            if (!empty($avgTime)) {
+                $serviceMap[$svcId] = $avgTime;
+            }
         }
     }
 
@@ -94,31 +98,13 @@ function extractGopAvgTimes($html) {
         return $serviceMap;
     }
 
-    // Strategy 2: "id":"DIGITS" near "average_time":"VALUE" within same object
-    if (preg_match_all('/"id"\s*:\s*"(\d+)"(?:(?!"average_time")[^}])*"average_time"\s*:\s*"([^"]+)"/s', $html, $matches, PREG_SET_ORDER)) {
+    // Strategy 2: Alternative JSON map format: "7821":{"id":7821,...,"average_time":"1 minute"}
+    if (preg_match_all('/"(\d{1,8})"\s*:\s*\{[^{}]*?"average_time"\s*:\s*"([^"]*)"/s', $html, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
-            $serviceMap[(string)$m[1]] = trim($m[2]);
-        }
-    }
-
-    if (!empty($serviceMap)) {
-        return $serviceMap;
-    }
-
-    // Strategy 3: Backwards context search for closest preceding ID
-    if (preg_match_all('/"average_time"\s*:\s*"([^"]+)"/s', $html, $matches, PREG_OFFSET_CAPTURE)) {
-        foreach ($matches as $m) {
-            $avgTime = trim($m[1][0]);
-            $offset = $m[0][1];
-            $startPos = max(0, $offset - 3000);
-            $snippet = substr($html, $startPos, 3000);
-
-            if (preg_match_all('/"(?:id|service)"\s*:\s*"?"?(\d+)["\']?/i', $snippet, $idMatches) ||
-                preg_match_all('/"(\d{1,8})"\s*:\s*\{/', $snippet, $idMatches)) {
-                $lastId = end($idMatches[1]);
-                if ($lastId) {
-                    $serviceMap[(string)$lastId] = $avgTime;
-                }
+            $svcId = (string)$m[1];
+            $avgTime = trim($m[2]);
+            if (!empty($avgTime)) {
+                $serviceMap[$svcId] = $avgTime;
             }
         }
     }
