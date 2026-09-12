@@ -141,12 +141,179 @@ if ($route === '/admin/dashboard' && $method === 'GET') {
     }
 }
 
+// GET /admin/users
+if ($route === '/admin/users' && $method === 'GET') {
+    try {
+        $page = (int)($requestData['page'] ?? 1);
+        $limit = (int)($requestData['limit'] ?? 20);
+        $offset = ($page - 1) * $limit;
+        $search = trim($requestData['search'] ?? '');
+        $sortBy = $requestData['sortBy'] ?? 'last_login';
+        $sortOrder = strtoupper($requestData['sortOrder'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
+
+        $where = "WHERE 1=1";
+        $params = [];
+        if ($search !== '') {
+            $where .= " AND (tg_id LIKE ? OR username LIKE ? OR first_name LIKE ? OR last_name LIKE ?)";
+            $s = "%{$search}%";
+            $params = [$s, $s, $s, $s];
+        }
+
+        $orderSql = "ORDER BY last_login DESC";
+        if ($sortBy === 'big_balance') $orderSql = "ORDER BY balance $sortOrder";
+        elseif ($sortBy === 'total_spent') $orderSql = "ORDER BY balance $sortOrder";
+        elseif ($sortBy === 'recent_registration') $orderSql = "ORDER BY tg_id $sortOrder";
+
+        $countStmt = $pdo->prepare("SELECT COUNT(*) as total FROM auth $where");
+        $countStmt->execute($params);
+        $total = (int)($countStmt->fetch()['total'] ?? 0);
+
+        $stmt = $pdo->prepare("SELECT * FROM auth $where $orderSql LIMIT $limit OFFSET $offset");
+        $stmt->execute($params);
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($users as &$u) {
+            $u['balance'] = (float)$u['balance'];
+        }
+
+        echo json_encode(['users' => $users, 'total' => $total]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to load users']);
+        exit;
+    }
+}
+
+// POST /admin/users/balance
+if ($route === '/admin/users/balance' && $method === 'POST') {
+    try {
+        $tgId = $requestData['tg_id'] ?? null;
+        $amount = (float)($requestData['amount'] ?? 0);
+        if (!$tgId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tg_id is required']);
+            exit;
+        }
+
+        $stmt = $pdo->prepare("UPDATE auth SET balance = balance + ? WHERE tg_id = ?");
+        $stmt->execute([$amount, $tgId]);
+
+        $bStmt = $pdo->prepare("SELECT balance FROM auth WHERE tg_id = ?");
+        $bStmt->execute([$tgId]);
+        $newBal = (float)($bStmt->fetch()['balance'] ?? 0);
+
+        echo json_encode(['success' => true, 'newBalance' => $newBal]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to update balance']);
+        exit;
+    }
+}
+
+// GET /admin/orders
+if ($route === '/admin/orders' && $method === 'GET') {
+    try {
+        $page = (int)($requestData['page'] ?? 1);
+        $limit = (int)($requestData['limit'] ?? 20);
+        $offset = ($page - 1) * $limit;
+        $search = trim($requestData['search'] ?? '');
+        $status = trim($requestData['status'] ?? '');
+
+        $where = "WHERE 1=1";
+        $params = [];
+        if ($search !== '') {
+            $where .= " AND (o.id LIKE ? OR o.user_id LIKE ? OR o.link LIKE ?)";
+            $s = "%{$search}%";
+            $params[] = $s; $params[] = $s; $params[] = $s;
+        }
+        if ($status !== '') {
+            $where .= " AND o.status = ?";
+            $params[] = $status;
+        }
+
+        $countStmt = $pdo->prepare("SELECT COUNT(*) as total FROM orders o $where");
+        $countStmt->execute($params);
+        $total = (int)($countStmt->fetch()['total'] ?? 0);
+
+        $stmt = $pdo->prepare("
+            SELECT o.*, a.username, a.first_name 
+            FROM orders o 
+            LEFT JOIN auth a ON o.user_id = a.tg_id 
+            $where ORDER BY o.created_at DESC LIMIT $limit OFFSET $offset
+        ");
+        $stmt->execute($params);
+        $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($orders as &$o) {
+            $o['id'] = (int)$o['id'];
+            $o['quantity'] = (int)$o['quantity'];
+            $o['charge'] = (float)($o['charge'] ?? 0);
+            $o['cost'] = (float)($o['cost'] ?? $o['charge'] ?? 0);
+            $o['target_link'] = $o['target_link'] ?? $o['link'] ?? '';
+            $o['provider_order_id'] = $o['api_order_id'] ?? '';
+        }
+
+        echo json_encode(['orders' => $orders, 'total' => $total]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to load orders']);
+        exit;
+    }
+}
+
+// GET /admin/deposits
+if ($route === '/admin/deposits' && $method === 'GET') {
+    try {
+        $page = (int)($requestData['page'] ?? 1);
+        $limit = (int)($requestData['limit'] ?? 20);
+        $offset = ($page - 1) * $limit;
+        $search = trim($requestData['search'] ?? '');
+        $status = trim($requestData['status'] ?? '');
+
+        $where = "WHERE 1=1";
+        $params = [];
+        if ($search !== '') {
+            $where .= " AND (d.tx_ref LIKE ? OR d.user_id LIKE ?)";
+            $s = "%{$search}%";
+            $params[] = $s; $params[] = $s;
+        }
+        if ($status !== '') {
+            $where .= " AND d.status = ?";
+            $params[] = $status;
+        }
+
+        $countStmt = $pdo->prepare("SELECT COUNT(*) as total FROM deposits d $where");
+        $countStmt->execute($params);
+        $total = (int)($countStmt->fetch()['total'] ?? 0);
+
+        $stmt = $pdo->prepare("
+            SELECT d.*, a.username, a.first_name 
+            FROM deposits d 
+            LEFT JOIN auth a ON d.user_id = a.tg_id 
+            $where ORDER BY d.created_at DESC LIMIT $limit OFFSET $offset
+        ");
+        $stmt->execute($params);
+        $deposits = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($deposits as &$d) {
+            $d['id'] = (int)$d['id'];
+            $d['amount'] = (float)$d['amount'];
+        }
+
+        echo json_encode(['deposits' => $deposits, 'total' => $total]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to load deposits']);
+        exit;
+    }
+}
+
 // GET /admin/holidays
 if ($route === '/admin/holidays' && $method === 'GET') {
     try {
         $stmt = $pdo->query("SELECT * FROM holidays ORDER BY start_date ASC, id DESC");
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        // Cast types for JSON compatibility
         foreach ($rows as &$r) {
             $r['id'] = (int)$r['id'];
             $r['discount_percent'] = (int)$r['discount_percent'];
