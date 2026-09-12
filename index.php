@@ -115,8 +115,9 @@ if (!$isSseRoute) {
 
 if (strpos($route, '/app/') === 0 || $route === '/app') {
     require_once __DIR__ . '/routes/app.php';
-} elseif ($route === '/services' || $route === '/categories' || $route === '/average-times' || strpos($route, '/services/') === 0) {
+} elseif ($route === '/services' || $route === '/categories' || $route === '/average-times' || $route === '/godofpanel-average-times' || $route === '/gop-average-times' || strpos($route, '/services/') === 0) {
     require_once __DIR__ . '/routes/services.php';
+
 } elseif (strpos($route, '/orders/') === 0 || $route === '/orders') {
     require_once __DIR__ . '/routes/orders.php';
 } elseif (
