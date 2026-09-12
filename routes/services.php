@@ -303,12 +303,14 @@ if ($route === '/services') {
             }
         } catch (Exception $e) {}
 
-        // Service delivery duration adjustments map (from JAP scraper cache)
+        // Service delivery duration adjustments map (from GodOfPanel scraper cache)
         $adjustmentsMap = [];
         try {
-            require_once __DIR__ . '/../average_times_scraper.php';
-            $adjustmentsMap = getAverageTimes($forceRefresh);
+            require_once __DIR__ . '/../godofpanel_scraper.php';
+            $gopRes = getGodofpanelAverageTimes($forceRefresh);
+            $adjustmentsMap = isset($gopRes['data']) && is_array($gopRes['data']) ? $gopRes['data'] : $gopRes;
         } catch (Exception $e) {}
+
 
         // Fetch Raw Services
         $rawServices = null;
