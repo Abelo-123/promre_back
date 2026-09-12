@@ -69,6 +69,18 @@ if ($route === '/app/settings') {
         $settings['resellerMultiplier'] = $rawResellerMultiplier;
         $settings['rateMultiplier'] = $rawResellerMultiplier;
         
+        // Always check if there is an active holiday in the holidays table
+        try {
+            $hStmt = $pdo->query("SELECT name, discount_percent FROM holidays WHERE status = 'active' ORDER BY id DESC LIMIT 1");
+            $activeHolidays = $hStmt->fetchAll();
+            if (!empty($activeHolidays)) {
+                $settings['discountPercent'] = (float)$activeHolidays[0]['discount_percent'];
+                $settings['holidayName'] = (string)$activeHolidays[0]['name'];
+            }
+        } catch (Exception $hErr) {
+            // Ignore if notice or table uninitialized
+        }
+
         echo json_encode($settings);
     } catch (Exception $e) {
         echo json_encode([
