@@ -221,10 +221,6 @@ function triggerGopAsyncRevalidation() {
  * Formatted with 'last_updated' at top.
  */
 function getGodofpanelAverageTimes($forceRefresh = false) {
-    if (isset($_GET['debug']) && $_GET['debug'] === '1') {
-        return scrapeGopAverageTimes(true);
-    }
-
     $cacheDir = __DIR__ . '/cache';
     if (!file_exists($cacheDir)) {
         @mkdir($cacheDir, 0755, true);
