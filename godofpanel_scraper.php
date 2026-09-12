@@ -83,8 +83,36 @@ function extractGopAvgTimes($html) {
     $serviceMap = [];
     if (empty($html)) return $serviceMap;
 
-    // Strategy 1: GodOfPanel JSON array format: {"id":7821,...,"average_time":"1 minute"} or {"id":"7821",...,"average_time":"1 minute"}
-    if (preg_match_all('/"id"\s*:\s*"?(\d+)"?[^{}]*?"average_time"\s*:\s*"([^"]*)"/s', $html, $matches, PREG_SET_ORDER)) {
+    // Strategy 1: Extract JSON array containing [{"id":7821,...,"average_time":"1 minute"}, ...]
+    // Search for window/modules/services JSON arrays
+    if (preg_match_all('/\[\s*\{\s*"id"\s*:\s*\d+[^\]]*\]/s', $html, $arrayMatches)) {
+        foreach ($arrayMatches[0] as $jsonCandidate) {
+            // Trim to valid closing bracket if extra trailing text caught
+            $lastBracket = strrpos($jsonCandidate, ']');
+            if ($lastBracket !== false) {
+                $jsonCandidate = substr($jsonCandidate, 0, $lastBracket + 1);
+            }
+            $decoded = json_decode($jsonCandidate, true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $item) {
+                    if (is_array($item) && isset($item['id']) && isset($item['average_time'])) {
+                        $svcId = (string)$item['id'];
+                        $avgTime = trim((string)$item['average_time']);
+                        if (!empty($avgTime)) {
+                            $serviceMap[$svcId] = $avgTime;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (count($serviceMap) > 10) {
+        return $serviceMap;
+    }
+
+    // Strategy 2: Targeted regex per JSON object: "id":7821 ... "average_time":"1 minute"
+    if (preg_match_all('/"id"\s*:\s*(\d+)\b(?=[^}]*"average_time"\s*:\s*"([^"]*)")/s', $html, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $m) {
             $svcId = (string)$m[1];
             $avgTime = trim($m[2]);
@@ -94,17 +122,15 @@ function extractGopAvgTimes($html) {
         }
     }
 
-    if (!empty($serviceMap)) {
-        return $serviceMap;
-    }
-
-    // Strategy 2: Alternative JSON map format: "7821":{"id":7821,...,"average_time":"1 minute"}
-    if (preg_match_all('/"(\d{1,8})"\s*:\s*\{[^{}]*?"average_time"\s*:\s*"([^"]*)"/s', $html, $matches, PREG_SET_ORDER)) {
-        foreach ($matches as $m) {
-            $svcId = (string)$m[1];
-            $avgTime = trim($m[2]);
-            if (!empty($avgTime)) {
-                $serviceMap[$svcId] = $avgTime;
+    // Strategy 3: Direct pattern match on exact key-value pairs inside JSON string
+    if (empty($serviceMap)) {
+        if (preg_match_all('/"id"\s*:\s*(\d+)\s*,[^}]*?"average_time"\s*:\s*"([^"]*)"/s', $html, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                $svcId = (string)$m[1];
+                $avgTime = trim($m[2]);
+                if (!empty($avgTime)) {
+                    $serviceMap[$svcId] = $avgTime;
+                }
             }
         }
     }
