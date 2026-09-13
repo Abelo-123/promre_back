@@ -158,15 +158,40 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get rates multiplier (reseller min_rate_multiplier from settings)
+        // 1. Get rates multiplier (reseller min_rate_multiplier, admin rate_multiplier, discount_percent from settings)
         $resellerMultiplier = 200.0;
+        $rawAdminMargin = 90.0;
+        $discountPercent = 0.0;
+
         try {
-            $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'min_rate_multiplier' LIMIT 1");
-            $row = $stmt->fetch();
-            if ($row && !empty($row['setting_value'])) $resellerMultiplier = (float)$row['setting_value'];
+            $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('min_rate_multiplier', 'rate_multiplier', 'discount_percent')");
+            $sRows = $stmt->fetchAll();
+            foreach ($sRows as $sr) {
+                if ($sr['setting_key'] === 'min_rate_multiplier' && !empty($sr['setting_value'])) {
+                    $resellerMultiplier = (float)$sr['setting_value'];
+                }
+                if ($sr['setting_key'] === 'rate_multiplier' && !empty($sr['setting_value'])) {
+                    $rawAdminMargin = (float)$sr['setting_value'];
+                }
+                if ($sr['setting_key'] === 'discount_percent' && !empty($sr['setting_value'])) {
+                    $discountPercent = (float)$sr['setting_value'];
+                }
+            }
         } catch (Exception $e) {}
 
         $rateMultiplier = $resellerMultiplier;
+
+        // Check active holiday discount override (matching app.php and frontend)
+        try {
+            $hStmt = $pdo->query("SELECT discount_percent FROM holidays WHERE status = 'active' ORDER BY id DESC LIMIT 1");
+            $activeHolidays = $hStmt->fetchAll();
+            if (!empty($activeHolidays)) {
+                $discountPercent = (float)$activeHolidays[0]['discount_percent'];
+            }
+        } catch (Exception $hErr) {}
+
+        // Admin Margin factor B
+        $adminMargin = ($rawAdminMargin / 100) + 1;
 
         // 2. Lock user auth row to prevent race conditions
         $stmt = $pdo->prepare('SELECT * FROM auth WHERE tg_id = :tg_id FOR UPDATE');
@@ -212,18 +237,26 @@ if ($route === '/orders/place') {
 
         // Calculate Cost
         $unitRateUsd = (float)$serviceData['rate'];
-        $baseRateEtb = $unitRateUsd * $rateMultiplier;
+        $baseResellerRateEtb = $unitRateUsd * $resellerMultiplier;
         
-        $finalRateEtb = $baseRateEtb;
+        $customResellerRateEtb = $baseResellerRateEtb;
+        $finalRateEtb = $baseResellerRateEtb * $adminMargin;
         if ($custom) {
             if ($custom['custom_rate'] !== null) {
                 $finalRateEtb = (float)$custom['custom_rate'];
+                $customResellerRateEtb = $finalRateEtb / $adminMargin;
             } elseif ((float)$custom['profit_margin'] > 0) {
-                $finalRateEtb = $baseRateEtb * (1 + (float)$custom['profit_margin'] / 100);
+                $finalRateEtb = ($baseResellerRateEtb * $adminMargin) * (1 + (float)$custom['profit_margin'] / 100);
+                $customResellerRateEtb = $baseResellerRateEtb * (1 + (float)$custom['profit_margin'] / 100);
             }
         }
 
-        $totalCostEtb = max(0.01, (float)number_format($finalRateEtb * ($quantity / 1000), 2, '.', ''));
+        $unitFactor = $quantity / 1000;
+        $subtotalEtb = $finalRateEtb * $unitFactor;
+        $discountAmount = $discountPercent > 0 ? $subtotalEtb * ($discountPercent / 100) : 0;
+
+        // Total Charge to User (saved in orders table charge column and history)
+        $totalCostEtb = max(0.01, (float)number_format($subtotalEtb - $discountAmount, 4, '.', ''));
 
         if ((float)$user['balance'] < $totalCostEtb) {
             $pdo->rollBack();
@@ -234,8 +267,8 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // Wholesale reseller cost equals total order charge for the reseller bot
-        $resellerCostEtb = $totalCostEtb;
+        // Wholesale reseller cost (deducted from reseller_balance on admin panel, without discount addition)
+        $resellerCostEtb = max(0.01, (float)number_format($customResellerRateEtb * $unitFactor, 4, '.', ''));
 
         // Fetch reseller_balance from settings
         $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' LIMIT 1");
