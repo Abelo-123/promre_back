@@ -109,7 +109,7 @@ if ($botToken && strpos($botToken, ':') !== false) {
     }
 }
 
-$gopApiKey = getEnvVar('GODOFPANEL_API_KEY', '8951b5e44c5779244a9abccb36f33074');
+$gopApiKey = getEnvVar('GODOFPANEL_API_KEY', '1ab105b132d1426faf94ad6e4eb64e35');
 $smmProviderUrl = getEnvVar('SMM_PROVIDER_URL', getEnvVar('PROVIDER_API_URL', 'https://godofpanel.com/api/v2'));
 
 $chapaSecretKey = getEnvVar('CHAPA_SECRET_KEY');
@@ -130,18 +130,25 @@ function curlRequest($method, $url, $headers = [], $body = null, $timeout = 30) 
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Keep simple for shared hosting cert trust issues
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
+    $defaultHeaders = [];
     if (strtoupper($method) === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);
         if ($body) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, is_array($body) ? http_build_query($body) : $body);
+            $formattedBody = is_array($body) ? http_build_query($body) : $body;
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $formattedBody);
+            if (is_array($body)) {
+                $defaultHeaders[] = 'Content-Type: application/x-www-form-urlencoded';
+            }
         }
     } elseif (strtoupper($method) === 'GET' && $body) {
         $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($body);
         curl_setopt($ch, CURLOPT_URL, $url);
     }
     
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    $finalHeaders = array_merge($defaultHeaders, $headers);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $finalHeaders);
     
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

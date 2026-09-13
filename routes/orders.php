@@ -203,11 +203,20 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // 3. Fetch specific service from JustAnotherPanel
+        // 3. Fetch specific service from JustAnotherPanel / GodOfPanel
         $rawServices = getCachedData('upstream_services', 3600);
         if (!$rawServices) {
-            $rawServices = fetchUpstreamServices();
-            setCachedData('upstream_services', $rawServices);
+            try {
+                $rawServices = fetchUpstreamServices();
+                setCachedData('upstream_services', $rawServices);
+            } catch (Exception $e) {
+                $rawServices = getCachedData('upstream_services', 86400 * 365);
+                if (!$rawServices) {
+                    $pdo->rollBack();
+                    echo json_encode(['success' => false, 'error' => 'Upstream service catalog unavailable: ' . $e->getMessage()]);
+                    exit;
+                }
+            }
         }
 
         $serviceData = null;
