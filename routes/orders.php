@@ -264,7 +264,7 @@ if ($route === '/orders/place') {
         $subtotalEtb = $finalRateEtb * $unitFactor;
         $discountAmount = $discountPercent > 0 ? $subtotalEtb * ($discountPercent / 100) : 0;
 
-        // Total Charge to User (saved in orders table charge column and history)
+        // Total Charge to User (discounted balance, e.g. 1.3 ETB, saved in orders table charge column and history)
         $totalCostEtb = max(0.01, (float)number_format($subtotalEtb - $discountAmount, 4, '.', ''));
 
         if ((float)$user['balance'] < $totalCostEtb) {
@@ -276,8 +276,8 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // Wholesale reseller cost (deducted from reseller_balance on admin panel, without discount addition)
-        $resellerCostEtb = max(0.01, (float)number_format($customResellerRateEtb * $unitFactor, 4, '.', ''));
+        // Reseller cost (undiscounted balance, e.g. 1.5 ETB, deducted from reseller_balance on admin panel)
+        $resellerCostEtb = max(0.01, (float)number_format($subtotalEtb, 4, '.', ''));
 
         // Fetch reseller_balance from settings
         $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' LIMIT 1");
