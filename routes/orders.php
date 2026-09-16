@@ -287,7 +287,7 @@ if ($route === '/orders/place') {
 
         if ($resellerBalance < $resellerCostEtb) {
             $pdo->rollBack();
-            echo json_encode(['success' => false, 'error' => 'Insufficient reseller balance on admin panel. Please contact admin.']);
+            echo json_encode(['success' => false, 'error' => 'Unable to place this order. Please contact the administrator. (Error code: 01122)']);
             exit;
         }
 
@@ -309,9 +309,9 @@ if ($route === '/orders/place') {
             $pdo->rollBack();
             $providerErr = isset($orderData['error']) ? $orderData['error'] : 'Upstream panel placing order failed';
             
-            // Intercept balance-related upstream errors to clarify that the BOT OWNER needs to top up GodOfPanel
-            if (stripos($providerErr, 'funds') !== false || stripos($providerErr, 'balance') !== false) {
-                $providerErr = "Provider Error: {$providerErr}. (Admin: Please deposit funds to your GodOfPanel account)";
+            // Intercept balance-related upstream errors
+            if (stripos($providerErr, 'funds') !== false || stripos($providerErr, 'balance') !== false || stripos($providerErr, 'not enough') !== false) {
+                $providerErr = "Unable to place this order. Please contact the administrator. (Error code: 01144)";
             }
             
             echo json_encode(['success' => false, 'error' => $providerErr]);
