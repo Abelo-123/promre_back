@@ -461,6 +461,361 @@ if ($route === '/admin/reseller/withdraw-deposit' && $method === 'POST') {
     exit;
 }
 
+// Ensure reseller_deposits table exists (Auto-migration safety net)
+try {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS reseller_deposits (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            amount DECIMAL(10, 2) NOT NULL,
+            tx_ref VARCHAR(255) NOT NULL UNIQUE,
+            status VARCHAR(50) DEFAULT 'pending',
+            chapa_tx_ref VARCHAR(255) DEFAULT NULL,
+            chapa_response TEXT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME DEFAULT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
+} catch (Exception $e) {
+    // Log error but do not block execution if table already exists
+}
+
+// ─── ROUTE: /admin/reseller/deposit/test-init (GET) ──────────────────
+if ($route === '/admin/reseller/deposit/test-init' && $method === 'GET') {
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'message' => "Reseller deposit router is fully active!"]);
+    exit;
+}
+
+// ─── ROUTE: /admin/reseller/deposit/init (POST) ──────────────────────
+if ($route === '/admin/reseller/deposit/init' && $method === 'POST') {
+    header('Content-Type: application/json');
+    $rawAmount = isset($requestData['amount']) ? $requestData['amount'] : 0;
+    $amount = (float)$rawAmount;
+
+    $envGetter = function (string $key, string $default = ''): string {
+        $val = getenv($key);
+        if ($val === false) {
+            $val = $_ENV[$key] ?? $_SERVER[$key] ?? $default;
+        }
+        return (string)$val;
+    };
+
+    $minDep = (int)$envGetter('MIN_DEPOSIT', '10');
+    $maxDep = (int)$envGetter('MAX_DEPOSIT', '100000');
+
+    if ($amount < $minDep) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => "Minimum deposit is {$minDep} ETB"]);
+        exit;
+    }
+    if ($amount > $maxDep) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => "Maximum deposit is " . number_format($maxDep) . " ETB"]);
+        exit;
+    }
+
+    $txRef = "RADM-" . time() . "-" . bin2hex(random_bytes(4));
+
+    try {
+        $stmt = $pdo->prepare("INSERT INTO reseller_deposits (amount, tx_ref, status) VALUES (:amount, :tx_ref, 'pending')");
+        $stmt->execute(['amount' => $amount, 'tx_ref' => $txRef]);
+
+        $chapaSecretKey = $envGetter('CHAPA_SECRET_KEY', 'CHASECK-WGUq6JVPIxSmjVSWTebh5UOOcshNscEd');
+        $chapaBaseUrl = rtrim($envGetter('CHAPA_BASE_URL', 'https://api.chapa.co/v1'), '/');
+        $siteUrl = $envGetter('SITE_URL', 'https://promre-back.onrender.com');
+        $baseUrl = (strpos($siteUrl, 'http') === 0) ? $siteUrl : "https://{$siteUrl}";
+
+        $chapaCallbackUrl = "{$baseUrl}/api/admin/reseller/deposit/callback";
+        $chapaReturnUrl = isset($requestData['return_url']) ? $requestData['return_url'] : "{$baseUrl}/api/admin/reseller/deposit/callback?tx_ref={$txRef}";
+
+        $payload = [
+            'amount'        => $amount,
+            'currency'      => 'ETB',
+            'email'         => 'admin@primore.com',
+            'first_name'    => 'Admin',
+            'last_name'     => 'Reseller',
+            'tx_ref'        => $txRef,
+            'callback_url'  => $chapaCallbackUrl,
+            'return_url'    => $chapaReturnUrl,
+            'customization' => [
+                'title'       => 'Primore Topup',
+                'description' => 'Admin balance deposit'
+            ]
+        ];
+
+        $res = function_exists('curlRequest')
+            ? curlRequest('POST', "{$chapaBaseUrl}/transaction/initialize", [
+                "Authorization: Bearer {$chapaSecretKey}",
+                "Content-Type: application/json"
+            ], json_encode($payload), 20)
+            : ['code' => 0, 'body' => ''];
+
+        $chapaData = json_decode($res['body'], true);
+        $success = $res['code'] === 200 && isset($chapaData['status']) && $chapaData['status'] === 'success';
+
+        if ($success && isset($chapaData['data']['checkout_url'])) {
+            $checkoutUrl = $chapaData['data']['checkout_url'];
+            $stmt = $pdo->prepare("UPDATE reseller_deposits SET status = 'initiated' WHERE tx_ref = :tx_ref");
+            $stmt->execute(['tx_ref' => $txRef]);
+            echo json_encode([
+                'success'      => true,
+                'checkout_url' => $checkoutUrl,
+                'tx_ref'       => $txRef
+            ]);
+        } else {
+            $stmt = $pdo->prepare("DELETE FROM reseller_deposits WHERE tx_ref = :tx_ref");
+            $stmt->execute(['tx_ref' => $txRef]);
+            http_response_code(400);
+            $errMsg = 'Failed to initialize Chapa payment';
+            if (isset($chapaData['message'])) {
+                $errMsg = is_array($chapaData['message']) ? json_encode($chapaData['message']) : (string)$chapaData['message'];
+            }
+            if (empty($errMsg) && isset($chapaData['error'])) {
+                $errMsg = is_array($chapaData['error']) ? json_encode($chapaData['error']) : (string)$chapaData['error'];
+            }
+            echo json_encode([
+                'success' => false,
+                'error' => "Chapa Error: {$errMsg}",
+                'debug' => isset($res['body']) ? $res['body'] : ''
+            ]);
+        }
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'System error: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// ─── ROUTE: /admin/reseller/deposit/callback (GET / POST) ────────────
+if ($route === '/admin/reseller/deposit/callback') {
+    header('Content-Type: application/json');
+    $envGetter = function (string $key, string $default = ''): string {
+        $val = getenv($key);
+        if ($val === false) {
+            $val = $_ENV[$key] ?? $_SERVER[$key] ?? $default;
+        }
+        return (string)$val;
+    };
+    $chapaSecretKey = $envGetter('CHAPA_SECRET_KEY', 'CHASECK-WGUq6JVPIxSmjVSWTebh5UOOcshNscEd');
+    $chapaBaseUrl = rtrim($envGetter('CHAPA_BASE_URL', 'https://api.chapa.co/v1'), '/');
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $headers = array_change_key_case(getallheaders(), CASE_LOWER);
+        $signature = isset($headers['chapa-signature']) ? $headers['chapa-signature'] : null;
+        if ($signature && $chapaSecretKey) {
+            $rawPost = file_get_contents('php://input');
+            $hash = hash_hmac('sha256', $rawPost, $chapaSecretKey);
+            if ($signature !== $hash) {
+                http_response_code(401);
+                echo "Forbidden";
+                exit;
+            }
+        }
+    }
+
+    $txRef = isset($requestData['trx_ref']) ? $requestData['trx_ref'] : (isset($requestData['tx_ref']) ? $requestData['tx_ref'] : '');
+    if (empty($txRef)) {
+        echo json_encode(['success' => false, 'message' => 'Missing tx_ref']);
+        exit;
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare('SELECT status, amount FROM reseller_deposits WHERE tx_ref = :tx_ref FOR UPDATE');
+        $stmt->execute(['tx_ref' => $txRef]);
+        $depositCheck = $stmt->fetch();
+
+        if (!$depositCheck) {
+            $pdo->rollBack();
+            echo json_encode(['success' => false, 'message' => 'Deposit not found']);
+            exit;
+        }
+        if ($depositCheck['status'] === 'success') {
+            $pdo->rollBack();
+            echo json_encode(['success' => true, 'message' => 'Already processed']);
+            exit;
+        }
+
+        $url = "{$chapaBaseUrl}/transaction/verify/{$txRef}?_t=" . time();
+        $res = function_exists('curlRequest')
+            ? curlRequest('GET', $url, [
+                "Authorization: Bearer {$chapaSecretKey}",
+                "Cache-Control: no-cache"
+            ], null, 20)
+            : ['code' => 0, 'body' => ''];
+
+        $verifyData = json_decode($res['body'], true);
+        $chapaStatus = isset($verifyData['data']['status']) ? strtolower($verifyData['data']['status']) : '';
+        $isSuccess = $res['code'] === 200 && ($chapaStatus === 'success' || $chapaStatus === 'paid');
+
+        if ($isSuccess) {
+            $verifiedAmount = isset($verifyData['data']['amount']) ? (float)$verifyData['data']['amount'] : (float)$depositCheck['amount'];
+            $chapaRef = isset($verifyData['data']['reference']) ? $verifyData['data']['reference'] : '';
+            $responseJson = json_encode($verifyData);
+
+            $stmt = $pdo->prepare("UPDATE reseller_deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE tx_ref = :tx_ref");
+            $stmt->execute(['chapa_ref' => $chapaRef, 'resp' => $responseJson, 'tx_ref' => $txRef]);
+
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' LIMIT 1");
+            $stmt->execute();
+            $sRow = $stmt->fetch();
+            $currentBalance = $sRow ? (float)$sRow['setting_value'] : 0.0;
+            $newBalance = $currentBalance + $verifiedAmount;
+
+            $stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('reseller_balance', :val) ON DUPLICATE KEY UPDATE setting_value = :val_up");
+            $stmt->execute(['val' => (string)$newBalance, 'val_up' => (string)$newBalance]);
+
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'total_deposit' LIMIT 1");
+            $stmt->execute();
+            $tdRow = $stmt->fetch();
+            $currentTotalDeposit = $tdRow ? (float)$tdRow['setting_value'] : 0.0;
+            $newTotalDeposit = $currentTotalDeposit + $verifiedAmount;
+
+            $stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('total_deposit', :val) ON DUPLICATE KEY UPDATE setting_value = :val_up");
+            $stmt->execute(['val' => (string)$newTotalDeposit, 'val_up' => (string)$newTotalDeposit]);
+
+            $pdo->commit();
+            echo json_encode(['success' => true, 'message' => 'Deposit credited successfully', 'reseller_balance' => $newBalance]);
+        } else {
+            $realStatus = isset($verifyData['data']['status']) ? $verifyData['data']['status'] : 'pending';
+            if (strtolower($realStatus) === 'failed') {
+                $stmt = $pdo->prepare("UPDATE reseller_deposits SET status = 'failed' WHERE tx_ref = :tx_ref");
+                $stmt->execute(['tx_ref' => $txRef]);
+            }
+            $pdo->commit();
+            echo json_encode(['success' => false, 'message' => 'Payment verification pending or failed']);
+        }
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        echo json_encode(['success' => false, 'message' => 'System error: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// ─── ROUTE: /admin/reseller/deposit/verify (POST / GET) ──────────────
+if ($route === '/admin/reseller/deposit/verify' && ($method === 'POST' || $method === 'GET')) {
+    header('Content-Type: application/json');
+    $txRef = isset($requestData['tx_ref']) ? $requestData['tx_ref'] : null;
+    if (empty($txRef)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Missing transaction reference']);
+        exit;
+    }
+
+    $envGetter = function (string $key, string $default = ''): string {
+        $val = getenv($key);
+        if ($val === false) {
+            $val = $_ENV[$key] ?? $_SERVER[$key] ?? $default;
+        }
+        return (string)$val;
+    };
+    $chapaSecretKey = $envGetter('CHAPA_SECRET_KEY', 'CHASECK-WGUq6JVPIxSmjVSWTebh5UOOcshNscEd');
+    $chapaBaseUrl = rtrim($envGetter('CHAPA_BASE_URL', 'https://api.chapa.co/v1'), '/');
+
+    try {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare('SELECT status, amount FROM reseller_deposits WHERE tx_ref = :tx_ref FOR UPDATE');
+        $stmt->execute(['tx_ref' => $txRef]);
+        $depositCheck = $stmt->fetch();
+
+        if (!$depositCheck) {
+            $pdo->rollBack();
+            echo json_encode(['success' => false, 'message' => 'Deposit record not found']);
+            exit;
+        }
+
+        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' LIMIT 1");
+        $stmt->execute();
+        $sRow = $stmt->fetch();
+        $resellerBalance = $sRow ? (float)$sRow['setting_value'] : 0.0;
+
+        if ($depositCheck['status'] === 'success') {
+            $pdo->rollBack();
+            echo json_encode([
+                'success'           => true,
+                'reseller_balance'  => $resellerBalance,
+                'message'           => 'Payment verified and credited.'
+            ]);
+            exit;
+        }
+
+        $url = "{$chapaBaseUrl}/transaction/verify/{$txRef}?_t=" . time();
+        $res = function_exists('curlRequest')
+            ? curlRequest('GET', $url, [
+                "Authorization: Bearer {$chapaSecretKey}",
+                "Cache-Control: no-cache"
+            ], null, 20)
+            : ['code' => 0, 'body' => ''];
+
+        $verifyData = json_decode($res['body'], true);
+        $chapaStatus = isset($verifyData['data']['status']) ? strtolower($verifyData['data']['status']) : '';
+        $isSuccess = $res['code'] === 200 && ($chapaStatus === 'success' || $chapaStatus === 'paid');
+
+        if ($isSuccess) {
+            $verifiedAmount = isset($verifyData['data']['amount']) ? (float)$verifyData['data']['amount'] : (float)$depositCheck['amount'];
+            $chapaRef = isset($verifyData['data']['reference']) ? $verifyData['data']['reference'] : '';
+            $responseJson = json_encode($verifyData);
+
+            $stmt = $pdo->prepare("UPDATE reseller_deposits SET status = 'success', chapa_tx_ref = :chapa_ref, chapa_response = :resp, completed_at = NOW() WHERE tx_ref = :tx_ref");
+            $stmt->execute(['chapa_ref' => $chapaRef, 'resp' => $responseJson, 'tx_ref' => $txRef]);
+
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' LIMIT 1");
+            $stmt->execute();
+            $sRow = $stmt->fetch();
+            $currentBalance = $sRow ? (float)$sRow['setting_value'] : 0.0;
+            $newBalance = $currentBalance + $verifiedAmount;
+
+            $stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('reseller_balance', :val) ON DUPLICATE KEY UPDATE setting_value = :val_up");
+            $stmt->execute(['val' => (string)$newBalance, 'val_up' => (string)$newBalance]);
+
+            $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'total_deposit' LIMIT 1");
+            $stmt->execute();
+            $tdRow = $stmt->fetch();
+            $currentTotalDeposit = $tdRow ? (float)$tdRow['setting_value'] : 0.0;
+            $newTotalDeposit = $currentTotalDeposit + $verifiedAmount;
+
+            $stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('total_deposit', :val) ON DUPLICATE KEY UPDATE setting_value = :val_up");
+            $stmt->execute(['val' => (string)$newTotalDeposit, 'val_up' => (string)$newTotalDeposit]);
+
+            $pdo->commit();
+            echo json_encode([
+                'success'           => true,
+                'reseller_balance'  => $newBalance,
+                'message'           => 'Payment verified and balance updated!'
+            ]);
+        } else {
+            $isFailed = ($chapaStatus === 'failed' || strpos($chapaStatus, 'reject') !== false || strpos($chapaStatus, 'cancel') !== false);
+            if ($isFailed) {
+                $stmt = $pdo->prepare("UPDATE reseller_deposits SET status = 'failed' WHERE tx_ref = :tx_ref");
+                $stmt->execute(['tx_ref' => $txRef]);
+            }
+            $pdo->commit();
+
+            if ($isFailed) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'failed',
+                    'error'   => 'Payment was declined or cancelled by user.'
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'pending',
+                    'error'   => 'Payment verification pending. Please complete transaction on your phone.'
+                ]);
+            }
+        }
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        echo json_encode(['success' => false, 'message' => 'error', 'error' => 'Verification error: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
 if ($route === '/admin/reseller/deposit/history' && $method === 'GET') {
     try {
         $stmt = $pdo->query("SELECT * FROM reseller_deposits ORDER BY id DESC LIMIT 50");
