@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/helpers/reseller_balance.php';
+
 /**
  * Global Configuration & Database Connection Helper
  */

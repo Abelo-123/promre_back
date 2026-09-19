@@ -279,23 +279,10 @@ if ($route === '/orders/place') {
         // Reseller cost (undiscounted balance, e.g. 1.5 ETB, deducted from reseller_balance on admin panel)
         $resellerCostEtb = max(0.01, (float)number_format($subtotalEtb, 4, '.', ''));
 
-        // Canonical reseller balance check. The key must remain exactly `reseller_balance`.
-        $stmt = $pdo->prepare(
-            "SELECT setting_value 
-               FROM settings 
-              WHERE setting_key = 'reseller_balance' 
-              LIMIT 1 
-              FOR UPDATE"
-        );
-        $stmt->execute();
-        $resellerRow = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        $resellerBalanceRaw = isset($resellerRow['setting_value']) ? trim((string)$resellerRow['setting_value']) : '';
-        if ($resellerBalanceRaw === '' || !is_numeric($resellerBalanceRaw)) {
-            $resellerBalanceRaw = '0';
-        }
-
-        $resellerBalance = (float)number_format((float)$resellerBalanceRaw, 4, '.', '');
+        // Dual-sync reseller balance:
+        // reseller_balance_primore and reseller_balance are locked, synced, and updated atomically.
+        $resellerBalance = syncResellerBalanceKeys($pdo, true);
+        $resellerBalance = (float)number_format($resellerBalance, 4, '.', '');
         $resellerCostEtb = (float)number_format($resellerCostEtb, 4, '.', '');
 
         if ($resellerBalance < $resellerCostEtb) {
@@ -309,7 +296,7 @@ if ($route === '/orders/place') {
                     'reason' => 'insufficient_reseller_balance',
                     'required' => number_format($resellerCostEtb, 2, '.', ''),
                     'available' => number_format($resellerBalance, 2, '.', ''),
-                    'balance_key' => 'reseller_balance'
+                    'balance_keys' => getResellerBalanceKeys()
                 ]
             ]);
 
@@ -392,13 +379,10 @@ if ($route === '/orders/place') {
         // 8. Deduct user balance & Log ledger
         $newBalance = processTransaction($tgId, 'order', -$totalCostEtb, "Placed Order #{$dbId}", $pdo, 'order', $dbId);
 
-        // 8.5. Deduct reseller_balance IMMEDIATELY and ATOMICALLY upon successful placement
-        $stmtDeduct = $pdo->prepare("
-            UPDATE settings 
-            SET setting_value = CAST(GREATEST(0.00, CAST(setting_value AS DECIMAL(15,4)) - :cost) AS CHAR) 
-            WHERE setting_key = 'reseller_balance'
-        ");
-        $stmtDeduct->execute(['cost' => $resellerCostEtb]);
+        // 8.5. Deduct reseller balance synchronously across both reseller balance keys
+        $newResellerBalance = max(0.00, (float)number_format($resellerBalance - $resellerCostEtb, 4, '.', ''));
+        updateResellerBalanceDual($pdo, $newResellerBalance);
+        auditResellerBalanceChange($pdo, $resellerBalance, $newResellerBalance, 'order_placement');
 
         $pdo->commit();
 
