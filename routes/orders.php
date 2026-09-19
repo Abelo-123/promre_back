@@ -276,12 +276,11 @@ if ($route === '/orders/place') {
             exit;
         }
 
-        // Reseller cost (undiscounted balance, e.g. 1.5 ETB, deducted from reseller_balance on admin panel)
+        // Reseller cost (undiscounted balance, e.g. 1.5 ETB, deducted from canonical reseller balance)
         $resellerCostEtb = max(0.01, (float)number_format($subtotalEtb, 4, '.', ''));
 
-        // Dual-sync reseller balance:
-        // reseller_balance_primore and reseller_balance are locked, synced, and updated atomically.
-        $resellerBalance = syncResellerBalanceKeys($pdo, true);
+        // Canonical reseller balance key: reseller_balance_primore when RESELLER_ID=primore.
+        $resellerBalance = fetchPrimaryResellerBalance($pdo, true);
         $resellerBalance = (float)number_format($resellerBalance, 4, '.', '');
         $resellerCostEtb = (float)number_format($resellerCostEtb, 4, '.', '');
 
@@ -296,7 +295,7 @@ if ($route === '/orders/place') {
                     'reason' => 'insufficient_reseller_balance',
                     'required' => number_format($resellerCostEtb, 2, '.', ''),
                     'available' => number_format($resellerBalance, 2, '.', ''),
-                    'balance_keys' => getResellerBalanceKeys()
+                    'balance_key' => getPrimaryResellerBalanceKey()
                 ]
             ]);
 
@@ -379,10 +378,15 @@ if ($route === '/orders/place') {
         // 8. Deduct user balance & Log ledger
         $newBalance = processTransaction($tgId, 'order', -$totalCostEtb, "Placed Order #{$dbId}", $pdo, 'order', $dbId);
 
-        // 8.5. Deduct reseller balance synchronously across both reseller balance keys
         $newResellerBalance = max(0.00, (float)number_format($resellerBalance - $resellerCostEtb, 4, '.', ''));
-        updateResellerBalanceDual($pdo, $newResellerBalance);
-        auditResellerBalanceChange($pdo, $resellerBalance, $newResellerBalance, 'order_placement');
+
+        updatePrimaryResellerBalance($pdo, $newResellerBalance);
+        auditPrimaryResellerBalanceChange(
+            $pdo,
+            $resellerBalance,
+            $newResellerBalance,
+            'order_placement'
+        );
 
         $pdo->commit();
 

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/helpers/reseller_balance_primary.php';
 require_once __DIR__ . '/helpers/reseller_balance.php';
 
 /**

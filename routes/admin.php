@@ -209,8 +209,9 @@ if ($route === '/admin/change-password' && $method === 'POST') {
 // ─── Reseller Management ──────────────────────────────────────────────
 if ($route === '/admin/reseller/status' && $method === 'GET') {
     try {
-        $syncedResellerBalance = syncResellerBalanceKeys($pdo, false);
-        $syncedResellerBalance = (float)number_format($syncedResellerBalance, 2, '.', '');
+        $primaryResellerKey = getPrimaryResellerBalanceKey();
+        $resellerBalance = fetchPrimaryResellerBalance($pdo, false);
+        $resellerBalance = (float)number_format($resellerBalance, 2, '.', '');
 
         $stmt = $pdo->query(
             "SELECT setting_key, setting_value
@@ -226,12 +227,12 @@ if ($route === '/admin/reseller/status' && $method === 'GET') {
 
         echo json_encode([
             'success' => true,
-            'reseller_balance' => $syncedResellerBalance,
-            'reseller_balance_primore' => $syncedResellerBalance,
+            'reseller_balance' => $resellerBalance,
+            'reseller_balance_primore' => $resellerBalance,
+            'primary_reseller_balance_key' => $primaryResellerKey,
             'total_deposit' => (float)($rows['total_deposit'] ?? 0),
             'min_rate_multiplier' => (float)($rows['min_rate_multiplier'] ?? 200),
-            'rate_multiplier' => (float)($rows['rate_multiplier'] ?? 220),
-            'balance_keys' => getResellerBalanceKeys()
+            'rate_multiplier' => (float)($rows['rate_multiplier'] ?? 220)
         ]);
 
         exit;
@@ -258,14 +259,14 @@ if ($route === '/admin/reseller/add-balance' && $method === 'POST') {
             exit;
         }
 
-        $newBalance = adjustResellerBalanceDual($pdo, $amount, 'admin_add_balance');
+        $newBalance = adjustPrimaryResellerBalance($pdo, $amount, 'admin_add_balance');
 
         echo json_encode([
             'success' => true,
             'new_balance' => (float)number_format($newBalance, 2, '.', ''),
             'reseller_balance' => (float)number_format($newBalance, 2, '.', ''),
             'reseller_balance_primore' => (float)number_format($newBalance, 2, '.', ''),
-            'balance_keys' => getResellerBalanceKeys()
+            'primary_reseller_balance_key' => getPrimaryResellerBalanceKey()
         ]);
 
         exit;
@@ -297,14 +298,14 @@ if ($route === '/admin/reseller/adjust-balance' && $method === 'POST') {
             exit;
         }
 
-        $newBalance = adjustResellerBalanceDual($pdo, $delta, $reason);
+        $newBalance = adjustPrimaryResellerBalance($pdo, $delta, $reason);
 
         echo json_encode([
             'success' => true,
             'new_balance' => (float)number_format($newBalance, 2, '.', ''),
             'reseller_balance' => (float)number_format($newBalance, 2, '.', ''),
             'reseller_balance_primore' => (float)number_format($newBalance, 2, '.', ''),
-            'balance_keys' => getResellerBalanceKeys()
+            'primary_reseller_balance_key' => getPrimaryResellerBalanceKey()
         ]);
 
         exit;
