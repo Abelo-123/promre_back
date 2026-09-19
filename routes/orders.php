@@ -279,15 +279,40 @@ if ($route === '/orders/place') {
         // Reseller cost (undiscounted balance, e.g. 1.5 ETB, deducted from reseller_balance on admin panel)
         $resellerCostEtb = max(0.01, (float)number_format($subtotalEtb, 4, '.', ''));
 
-        // Fetch reseller_balance from settings
-        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance' LIMIT 1");
+        // Canonical reseller balance check. The key must remain exactly `reseller_balance`.
+        $stmt = $pdo->prepare(
+            "SELECT setting_value 
+               FROM settings 
+              WHERE setting_key = 'reseller_balance' 
+              LIMIT 1 
+              FOR UPDATE"
+        );
         $stmt->execute();
-        $resellerRow = $stmt->fetch();
-        $resellerBalance = $resellerRow ? (float)$resellerRow['setting_value'] : 0.0;
+        $resellerRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $resellerBalanceRaw = isset($resellerRow['setting_value']) ? trim((string)$resellerRow['setting_value']) : '';
+        if ($resellerBalanceRaw === '' || !is_numeric($resellerBalanceRaw)) {
+            $resellerBalanceRaw = '0';
+        }
+
+        $resellerBalance = (float)number_format((float)$resellerBalanceRaw, 4, '.', '');
+        $resellerCostEtb = (float)number_format($resellerCostEtb, 4, '.', '');
 
         if ($resellerBalance < $resellerCostEtb) {
             $pdo->rollBack();
-            echo json_encode(['success' => false, 'error' => 'Unable to place this order. Please contact the administrator. (Error code: 01122)']);
+
+            echo json_encode([
+                'success' => false,
+                'error_code' => '01122',
+                'error' => 'Unable to place this order. Please contact the administrator. (Error code: 01122)',
+                'details' => [
+                    'reason' => 'insufficient_reseller_balance',
+                    'required' => number_format($resellerCostEtb, 2, '.', ''),
+                    'available' => number_format($resellerBalance, 2, '.', ''),
+                    'balance_key' => 'reseller_balance'
+                ]
+            ]);
+
             exit;
         }
 

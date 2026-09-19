@@ -209,20 +209,40 @@ if ($route === '/admin/change-password' && $method === 'POST') {
 // ─── Reseller Management ──────────────────────────────────────────────
 if ($route === '/admin/reseller/status' && $method === 'GET') {
     try {
-        $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('reseller_balance', 'total_deposit', 'min_rate_multiplier', 'rate_multiplier')");
+        $stmt = $pdo->query(
+            "SELECT setting_key, setting_value
+               FROM settings
+              WHERE setting_key IN (
+                  'reseller_balance',
+                  'total_deposit',
+                  'min_rate_multiplier',
+                  'rate_multiplier'
+              )"
+        );
+
         $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        $resellerBalanceRaw = $rows['reseller_balance'] ?? '0';
+        if (!is_numeric($resellerBalanceRaw)) {
+            $resellerBalanceRaw = '0';
+        }
 
         echo json_encode([
             'success' => true,
-            'reseller_balance' => (float)($rows['reseller_balance'] ?? 0),
+            'reseller_balance' => (float)number_format((float)$resellerBalanceRaw, 2, '.', ''),
             'total_deposit' => (float)($rows['total_deposit'] ?? 0),
             'min_rate_multiplier' => (float)($rows['min_rate_multiplier'] ?? 200),
-            'rate_multiplier' => (float)($rows['rate_multiplier'] ?? 220)
+            'rate_multiplier' => (float)($rows['rate_multiplier'] ?? 220),
+            'balance_key' => 'reseller_balance'
         ]);
+
         exit;
     } catch (Exception $e) {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to load reseller status']);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Failed to load reseller status'
+        ]);
         exit;
     }
 }
@@ -230,18 +250,98 @@ if ($route === '/admin/reseller/status' && $method === 'GET') {
 if ($route === '/admin/reseller/add-balance' && $method === 'POST') {
     try {
         $amount = (float)($requestData['amount'] ?? 0);
-        $stmt = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'reseller_balance'");
-        $current = (float)($stmt->fetch()['setting_value'] ?? 0);
-        $newBal = $current + $amount;
 
-        $u = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('reseller_balance', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-        $u->execute([(string)$newBal, (string)$newBal]);
+        if ($amount <= 0) {
+            http_response_code(422);
+            echo json_encode([
+                'success' => false,
+                'error' => 'Amount must be greater than zero'
+            ]);
+            exit;
+        }
 
-        echo json_encode(['success' => true, 'new_balance' => $newBal]);
+        $startedTransaction = false;
+        if (!$pdo->inTransaction()) {
+            $pdo->beginTransaction();
+            $startedTransaction = true;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT setting_value
+               FROM settings
+              WHERE setting_key = 'reseller_balance'
+              LIMIT 1
+              FOR UPDATE"
+        );
+        $stmt->execute();
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $currentRaw = $row['setting_value'] ?? '0';
+
+        if (!is_numeric($currentRaw)) {
+            $currentRaw = '0';
+        }
+
+        $current = (float)number_format((float)$currentRaw, 4, '.', '');
+        $amount = (float)number_format($amount, 4, '.', '');
+        $newBal = (float)number_format($current + $amount, 4, '.', '');
+
+        $u = $pdo->prepare(
+            "INSERT INTO settings (setting_key, setting_value, created_at)
+             VALUES ('reseller_balance', ?, NOW())
+             ON DUPLICATE KEY UPDATE setting_value = ?"
+        );
+        $u->execute([
+            number_format($newBal, 4, '.', ''),
+            number_format($newBal, 4, '.', '')
+        ]);
+
+        try {
+            $audit = $pdo->prepare(
+                "INSERT INTO settings_audit (
+                    setting_key,
+                    old_value,
+                    new_value,
+                    change_reason,
+                    created_at
+                 )
+                 VALUES (
+                    'reseller_balance',
+                    ?,
+                    ?,
+                    'admin_add_balance',
+                    NOW()
+                 )"
+            );
+            $audit->execute([
+                number_format($current, 4, '.', ''),
+                number_format($newBal, 4, '.', '')
+            ]);
+        } catch (Exception $auditErr) {
+            // Ignore audit table absence if not yet migrated
+        }
+
+        if ($startedTransaction) {
+            $pdo->commit();
+        }
+
+        echo json_encode([
+            'success' => true,
+            'new_balance' => (float)number_format($newBal, 2, '.', ''),
+            'balance_key' => 'reseller_balance'
+        ]);
+
         exit;
     } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to add reseller balance']);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Failed to add reseller balance'
+        ]);
         exit;
     }
 }
