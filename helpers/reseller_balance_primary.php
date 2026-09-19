@@ -86,6 +86,9 @@ if (!defined('PRIMORE_PRIMARY_RESELLER_BALANCE_HELPER')) {
 
         $stmt->execute([$key, $value, $value]);
 
+        require_once __DIR__ . '/paxyoo_notify.php';
+        notifyPaxyooAdminBalanceChange($pdo);
+
         return (float)$value;
     }
 
