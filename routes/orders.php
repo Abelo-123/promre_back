@@ -158,13 +158,12 @@ if ($route === '/orders/place') {
 
         $pdo->beginTransaction();
         
-        // 1. Get rates multiplier (reseller min_rate_multiplier, admin rate_multiplier, discount_percent from settings)
+        // 1. Get rates multiplier (reseller min_rate_multiplier, admin rate_multiplier from settings)
         $resellerMultiplier = 200.0;
         $rawAdminMargin = 90.0;
-        $discountPercent = 0.0;
 
         try {
-            $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('min_rate_multiplier', 'rate_multiplier', 'discount_percent')");
+            $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('min_rate_multiplier', 'rate_multiplier')");
             $sRows = $stmt->fetchAll();
             foreach ($sRows as $sr) {
                 if ($sr['setting_key'] === 'min_rate_multiplier' && !empty($sr['setting_value'])) {
@@ -173,22 +172,10 @@ if ($route === '/orders/place') {
                 if ($sr['setting_key'] === 'rate_multiplier' && !empty($sr['setting_value'])) {
                     $rawAdminMargin = (float)$sr['setting_value'];
                 }
-                if ($sr['setting_key'] === 'discount_percent' && !empty($sr['setting_value'])) {
-                    $discountPercent = (float)$sr['setting_value'];
-                }
             }
         } catch (Exception $e) {}
 
         $rateMultiplier = $resellerMultiplier;
-
-        // Check active holiday discount override (matching app.php and frontend)
-        try {
-            $hStmt = $pdo->query("SELECT discount_percent FROM holidays WHERE status = 'active' ORDER BY id DESC LIMIT 1");
-            $activeHolidays = $hStmt->fetchAll();
-            if (!empty($activeHolidays)) {
-                $discountPercent = (float)$activeHolidays[0]['discount_percent'];
-            }
-        } catch (Exception $hErr) {}
 
         // Admin Margin factor B
         $adminMargin = ($rawAdminMargin / 100) + 1;
@@ -262,10 +249,9 @@ if ($route === '/orders/place') {
 
         $unitFactor = $quantity / 1000;
         $subtotalEtb = $finalRateEtb * $unitFactor;
-        $discountAmount = $discountPercent > 0 ? $subtotalEtb * ($discountPercent / 100) : 0;
 
-        // Total Charge to User (discounted balance, e.g. 1.3 ETB, saved in orders table charge column and history)
-        $totalCostEtb = max(0.01, (float)number_format($subtotalEtb - $discountAmount, 4, '.', ''));
+        // Total Charge to User (saved in orders table charge column and history)
+        $totalCostEtb = max(0.01, (float)number_format($subtotalEtb, 4, '.', ''));
 
         if ((float)$user['balance'] < $totalCostEtb) {
             $pdo->rollBack();

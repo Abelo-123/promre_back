@@ -34,7 +34,6 @@ if ($route === '/app/settings') {
         $settings = [
             'rateMultiplier' => 1.0,
             'adminMargin' => 90.0,
-            'discountPercent' => 0.0,
             'holidayName' => '',
             'maintenanceMode' => false,
             'userCanOrder' => true,
@@ -56,7 +55,6 @@ if ($route === '/app/settings') {
             if ($key === 'min_rate_multiplier' && !empty($val)) {
                 $rawResellerMultiplier = (float)$val;
             }
-            if ($key === 'discount_percent' && !empty($val)) $settings['discountPercent'] = (float)$val;
             if ($key === 'holiday_name') $settings['holidayName'] = $val;
             if ($key === 'maintenance_mode') $settings['maintenanceMode'] = ($val === '1' || $val === 'true');
             if ($key === 'user_can_order') $settings['userCanOrder'] = ($val === '1' || $val === 'true');
@@ -71,10 +69,9 @@ if ($route === '/app/settings') {
         
         // Always check if there is an active holiday in the holidays table
         try {
-            $hStmt = $pdo->query("SELECT name, discount_percent FROM holidays WHERE status = 'active' ORDER BY id DESC LIMIT 1");
+            $hStmt = $pdo->query("SELECT name FROM holidays WHERE status = 'active' ORDER BY id DESC LIMIT 1");
             $activeHolidays = $hStmt->fetchAll();
             if (!empty($activeHolidays)) {
-                $settings['discountPercent'] = (float)$activeHolidays[0]['discount_percent'];
                 $settings['holidayName'] = (string)$activeHolidays[0]['name'];
             }
         } catch (Exception $hErr) {
@@ -85,7 +82,6 @@ if ($route === '/app/settings') {
     } catch (Exception $e) {
         echo json_encode([
             'rateMultiplier' => 400.0,
-            'discountPercent' => 0.0,
             'holidayName' => '',
             'maintenanceMode' => false,
             'userCanOrder' => true,
